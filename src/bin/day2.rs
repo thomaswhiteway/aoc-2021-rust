@@ -9,19 +9,22 @@ struct Opt {
     input: PathBuf,
 }
 
+#[derive(Debug)]
 struct Position {
-    x: usize,
-    y: usize,
+    x: isize,
+    y: isize,
+    aim: isize
 }
 
+#[derive(Debug)]
 enum Command {
-    Forward(usize),
-    Down(usize),
-    Up(usize),
+    Forward(isize),
+    Down(isize),
+    Up(isize),
 }
 
-fn parse_arg(value: &str) -> Result<usize, String> {
-    value.parse::<usize>().map_err(|e| e.to_string())
+fn parse_arg(value: &str) -> Result<isize, String> {
+    value.parse::<isize>().map_err(|e| e.to_string())
 }
 
 impl TryFrom<String> for Command {
@@ -56,14 +59,17 @@ fn read_commands<P: AsRef<Path>>(input: P) -> Box<[Command]> {
 fn execute_command(command: &Command, position: &mut Position) {
     use Command::*;
     match command {
-        Forward(x) => position.x += x,
-        Down(x) => position.y += x,
-        Up(x) => position.y -= x,
+        Forward(x) => {
+            position.x += x;
+            position.y += x * position.aim;
+        }
+        Down(x) => position.aim += x,
+        Up(x) => position.aim -= x,
     }
 }
 
 fn execute_commands(commands: &[Command]) -> Position {
-    let mut position = Position { x: 0, y: 0 };
+    let mut position = Position { x: 0, y: 0, aim: 0 };
 
     for command in commands {
         execute_command(command, &mut position);
