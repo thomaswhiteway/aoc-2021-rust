@@ -13,7 +13,7 @@ struct Opt {
 struct Position {
     x: isize,
     y: isize,
-    aim: isize
+    aim: isize,
 }
 
 #[derive(Debug)]
@@ -31,7 +31,7 @@ impl TryFrom<String> for Command {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let parts: Vec<_> = value.split(" ").collect();
+        let parts: Vec<_> = value.split(' ').collect();
         if parts.len() != 2 {
             return Err(format!("Invalid command {}", value));
         }
