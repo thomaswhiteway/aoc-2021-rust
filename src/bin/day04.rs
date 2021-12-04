@@ -51,17 +51,38 @@ fn read_data<P: AsRef<Path>>(input: P) -> (Numbers, Cards) {
     parsing::game(&read_to_string(input).unwrap()).unwrap().1
 }
 
-fn find_winner(inputs: &[usize], cards: &mut [Card]) -> (Card, usize) {
-    for num in inputs {
+fn find_winner<'a>(inputs: &'a [usize], cards: &mut [Card]) -> (Card, usize, &'a [usize]) {
+    for (index, num) in inputs.iter().enumerate() {
         for card in cards.iter_mut() {
             card.mark(*num);
         }
 
         if let Some(card) = cards.iter().find(|card| card.has_won()) {
-            return (card.clone(), *num);
+            return (card.clone(), *num, &inputs[index + 1..]);
         }
     }
     panic!("No Winner");
+}
+
+fn find_last_winner(inputs: &[usize], cards: &mut [Card]) -> (Card, usize) {
+    let mut still_to_win: Vec<&mut Card> =
+        cards.iter_mut().filter(|card| !card.has_won()).collect();
+
+    for num in inputs {
+        for card in still_to_win.iter_mut() {
+            card.mark(*num);
+        }
+
+        if still_to_win.iter().all(|card| card.has_won()) {
+            return (still_to_win[0].clone(), *num);
+        }
+
+        still_to_win = still_to_win
+            .into_iter()
+            .filter(|card| !card.has_won())
+            .collect();
+    }
+    panic!("Not All Cards Won");
 }
 
 fn main() {
@@ -69,16 +90,22 @@ fn main() {
 
     let (inputs, mut cards) = read_data(&opt.input);
 
-    let (winning_card, last_number) = find_winner(&inputs, &mut cards);
+    let (winning_card, last_number, remaining) = find_winner(&inputs, &mut cards);
 
     let total: usize = winning_card.unmarked().iter().sum();
+    let score = total * last_number;
+
+    println!("{}", score);
+
+    let (last_winning_card, last_number) = find_last_winner(remaining, &mut cards);
+
+    let total: usize = last_winning_card.unmarked().iter().sum();
     let score = total * last_number;
 
     println!("{}", score);
 }
 
 mod parsing {
-    use {super::Card, super::Cards, super::Numbers};
     use nom::combinator::recognize;
     use nom::{
         character::complete::{char, one_of},
@@ -87,6 +114,7 @@ mod parsing {
         sequence::{preceded, terminated},
         IResult,
     };
+    use {super::Card, super::Cards, super::Numbers};
 
     fn number(input: &str) -> IResult<&str, usize> {
         map_res(recognize(many1(one_of("0123456789"))), |val: &str| {
