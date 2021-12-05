@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::cmp::{max, Ordering};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +16,16 @@ struct Position {
     y: isize,
 }
 
+impl Position {
+    fn offset(self, dx: isize, dy: isize) -> Position {
+        Position {
+            x: self.x + dx,
+            y: self.y + dy,
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Line {
     start: Position,
     end: Position,
@@ -31,20 +41,24 @@ impl Line {
     }
 
     fn points(&self) -> impl Iterator<Item = Position> {
-        if self.is_horizontal() {
-            let min_x = min(self.start.x, self.end.x);
-            let max_x = max(self.start.x, self.end.x);
-            let y = self.start.y;
-            Box::new((min_x..=max_x).map(move |x| Position { x, y }))
-                as Box<dyn Iterator<Item = Position>>
-        } else {
-            assert!(self.is_vertical());
-            let x = self.start.x;
-            let min_y = min(self.start.y, self.end.y);
-            let max_y = max(self.start.y, self.end.y);
-            Box::new((min_y..=max_y).map(move |y| Position { x, y }))
-                as Box<dyn Iterator<Item = Position>>
+        fn delta(start: isize, end: isize) -> isize {
+            use Ordering::*;
+            match start.cmp(&end) {
+                Less => 1,
+                Equal => 0,
+                Greater => -1,
+            }
         }
+        let dx = delta(self.start.x, self.end.x);
+        let dy = delta(self.start.y, self.end.y);
+
+        let length_x = (self.end.x - self.start.x).abs() + 1;
+        let length_y = (self.end.y - self.start.y).abs() + 1;
+        assert!(length_x == length_y || length_x == 1 || length_y == 1);
+        let length = max(length_x, length_y);
+
+        let start = self.start;
+        (0..length).map(move |offset| start.offset(offset * dx, offset * dy))
     }
 }
 
@@ -56,10 +70,8 @@ fn count_overlaps(lines: &[Line]) -> usize {
     let mut counts: HashMap<Position, usize> = HashMap::new();
 
     for line in lines {
-        if line.is_horizontal() || line.is_vertical() {
-            for point in line.points() {
-                *counts.entry(point).or_default() += 1;
-            }
+        for point in line.points() {
+            *counts.entry(point).or_default() += 1;
         }
     }
 
@@ -69,11 +81,18 @@ fn count_overlaps(lines: &[Line]) -> usize {
 fn main() {
     let opt = Opt::from_args();
 
-    let lines = read_lines(&opt.input);
+    let all_lines = read_lines(&opt.input);
 
-    let overlaps = count_overlaps(&lines);
+    let flat_lines = all_lines
+        .iter()
+        .filter(|line| line.is_horizontal() || line.is_vertical())
+        .cloned()
+        .collect::<Vec<_>>();
+    let flat_overlaps = count_overlaps(&flat_lines);
+    println!("Flat Overlaps: {}", flat_overlaps);
 
-    println!("{}", overlaps);
+    let all_overlaps = count_overlaps(&all_lines);
+    println!("All Overlaps: {}", all_overlaps);
 }
 
 mod parsing {
