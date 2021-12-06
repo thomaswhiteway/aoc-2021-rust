@@ -36,12 +36,6 @@ fn step_day(fishes: &mut Fishes) {
     fishes[8] = breeding_fishes;
 }
 
-fn step_time(fishes: &mut Fishes, days: usize) {
-    for _ in 0..days {
-        step_day(fishes);
-    }
-}
-
 fn count_fish(fishes: &Fishes) -> u128 {
     fishes.iter().sum()
 }
@@ -50,7 +44,10 @@ fn main() {
     let opt = Opt::from_args();
 
     let mut fishes = read_fish(&opt.input);
-    step_time(&mut fishes, 80);
-    let total_fish = count_fish(&fishes);
-    println!("Total Fish: {}", total_fish);
+    println!("Day 000: {}", count_fish(&fishes));
+
+    for day in 1..=256 {
+        step_day(&mut fishes);
+        println!("Day {:03}: {}", day, count_fish(&fishes));
+    }
 }
