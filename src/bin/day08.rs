@@ -60,49 +60,79 @@ fn read_problems<P: AsRef<Path>>(input: P) -> impl Iterator<Item = Problem> {
 }
 
 fn find_digit<F>(digits: &mut Vec<Signals>, pred: F) -> Option<Signals>
-    where F: Fn(&Signals) -> bool
+where
+    F: Fn(&Signals) -> bool,
 {
-    digits.iter().position(pred).map(|index| digits.remove(index))
+    digits
+        .iter()
+        .position(pred)
+        .map(|index| digits.remove(index))
 }
 
 fn find_digits(distinct_digits: &[Signals; 10]) -> [Signals; 10] {
     let mut output: [Signals; 10] = Default::default();
-    let mut remaining_digits = distinct_digits.to_vec();
+    let mut digits = distinct_digits.to_vec();
 
-    output[1] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 2).unwrap();
-    output[4] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 4).unwrap();
-    output[7] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 3).unwrap();
-    output[8] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 7).unwrap();
+    output[1] = find_digit(&mut digits, |sigs| sigs.len() == 2).unwrap();
+    output[4] = find_digit(&mut digits, |sigs| sigs.len() == 4).unwrap();
+    output[7] = find_digit(&mut digits, |sigs| sigs.len() == 3).unwrap();
+    output[8] = find_digit(&mut digits, |sigs| sigs.len() == 7).unwrap();
 
-    output[6] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 6 && !sigs.is_superset(&output[1])).unwrap();
-    output[9] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 6 && sigs.is_superset(&output[4])).unwrap();
-    output[0] = find_digit(&mut remaining_digits, |sigs| sigs.len() == 6).unwrap();
+    output[6] = find_digit(&mut digits, |sigs| {
+        sigs.len() == 6 && !sigs.is_superset(&output[1])
+    })
+    .unwrap();
+    output[9] = find_digit(&mut digits, |sigs| {
+        sigs.len() == 6 && sigs.is_superset(&output[4])
+    })
+    .unwrap();
+    output[0] = find_digit(&mut digits, |sigs| sigs.len() == 6).unwrap();
 
     // All remaining digits have 5 signals
-    output[3] = find_digit(&mut remaining_digits, |sigs| sigs.is_superset(&output[1])).unwrap();
-    output[5] = find_digit(&mut remaining_digits, |sigs| sigs.intersection(&output[6]).count() == 5).unwrap();
-    output[2] = remaining_digits.pop().unwrap();
+    output[3] = find_digit(&mut digits, |sigs| sigs.is_superset(&output[1])).unwrap();
+    output[5] = find_digit(&mut digits, |sigs| {
+        sigs.intersection(&output[6]).count() == 5
+    })
+    .unwrap();
+    output[2] = digits.pop().unwrap();
 
     output
 }
 
 fn decode_output(digits: &[Signals; 10], output: &[Signals; 4]) -> [usize; 4] {
-    output.iter().map(|signals| digits.iter().position(|sigs| sigs == signals).unwrap()).collect::<Vec<_>>().try_into().unwrap()
+    output
+        .iter()
+        .map(|signals| digits.iter().position(|sigs| sigs == signals).unwrap())
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
 }
 
 fn main() {
     let opt = Opt::from_args();
 
     let problems = read_problems(opt.input);
-    let solution: usize = problems
+    let outputs: Vec<[usize; 4]> = problems
         .map(|problem| {
             let digits = find_digits(&problem.distinct_digits);
-            let output = decode_output(&digits, &problem.output_digits);
+            decode_output(&digits, &problem.output_digits)
+        })
+        .collect();
+
+    let count: usize = outputs
+        .iter()
+        .map(|output| {
             output
                 .iter()
                 .filter(|&&d| d == 1 || d == 4 || d == 7 || d == 8)
                 .count()
         })
         .sum();
-    println!("{}", solution);
+    println!("{}", count);
+
+    let total: usize = outputs
+        .iter()
+        .map(|output| output[0] * 1000 + output[1] * 100 + output[2] * 10 + output[3])
+        .sum();
+    println!("{}", total);
 }
