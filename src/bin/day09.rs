@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -77,6 +77,25 @@ fn get_risk_level(map: &HeightMap, position: &Position) -> usize {
     map.get(position).unwrap() + 1
 }
 
+fn find_basin(map: &HeightMap, position: &Position) -> HashSet<Position> {
+    let mut basin = HashSet::new();
+
+    let mut to_visit = vec![*position];
+    while let Some(pos) = to_visit.pop() {
+        if !basin.contains(&pos) {
+            if let Some(&height) = map.get(&pos) {
+                if height < 9 {
+                    basin.insert(pos);
+
+                    to_visit.extend(pos.adjacent())
+                }
+            }
+        }
+    }
+
+    basin
+}
+
 fn main() {
     let opt = Opt::from_args();
 
@@ -86,5 +105,13 @@ fn main() {
         .iter()
         .map(|position| get_risk_level(&map, position))
         .sum();
-    println!("Total Risk: {}", total_risk)
+    println!("Total Risk: {}", total_risk);
+
+    let mut basin_sizes = low_points
+        .iter()
+        .map(|pos| find_basin(&map, pos).len())
+        .collect::<Vec<_>>();
+    basin_sizes.sort_by(|a, b| a.cmp(b).reverse());
+
+    println!("{}", basin_sizes[0] * basin_sizes[1] * basin_sizes[2]);
 }
