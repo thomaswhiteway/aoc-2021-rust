@@ -19,23 +19,23 @@ fn read_program<P: AsRef<Path>>(input: P) -> Box<[String]> {
 
 enum ValidateResult {
     Invalid(char),
-    Incomplete(String)
+    Incomplete(String),
 }
 
 impl ValidateResult {
     fn invalid_char(&self) -> Option<char> {
         match *self {
             ValidateResult::Invalid(c) => Some(c),
-            _ => None
+            _ => None,
         }
     }
 
     fn remaining_string(&self) -> Option<&str> {
         match self {
-            ValidateResult::Incomplete(remaining) => Some(&remaining),
-            _ => None
+            ValidateResult::Incomplete(remaining) => Some(remaining),
+            _ => None,
         }
-    }    
+    }
 }
 
 fn closer(open: char) -> char {
@@ -98,7 +98,12 @@ fn remaining_char_score(c: char) -> usize {
 }
 
 fn remaining_score(remaining: &str) -> usize {
-    remaining.chars().rev().enumerate().map(|(index, c)| 5_usize.pow(index as u32) * remaining_char_score(c)).sum()
+    remaining
+        .chars()
+        .rev()
+        .enumerate()
+        .map(|(index, c)| 5_usize.pow(index as u32) * remaining_char_score(c))
+        .sum()
 }
 
 fn main() {
@@ -106,11 +111,19 @@ fn main() {
 
     let program = read_program(opt.input);
     let validate_results = validate_program(&program);
-    let invalid_score: usize = validate_results.iter().filter_map(ValidateResult::invalid_char).map(invalid_char_score).sum();
+    let invalid_score: usize = validate_results
+        .iter()
+        .filter_map(ValidateResult::invalid_char)
+        .map(invalid_char_score)
+        .sum();
     println!("{}", invalid_score);
 
-    let mut remaining_scores: Vec<usize> = validate_results.iter().filter_map(ValidateResult::remaining_string).map(remaining_score).collect();
-    remaining_scores.sort();
-    let middle_score = remaining_scores[remaining_scores.len()/2];
+    let mut remaining_scores: Vec<usize> = validate_results
+        .iter()
+        .filter_map(ValidateResult::remaining_string)
+        .map(remaining_score)
+        .collect();
+    remaining_scores.sort_unstable();
+    let middle_score = remaining_scores[remaining_scores.len() / 2];
     println!("{}", middle_score);
 }
