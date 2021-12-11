@@ -100,16 +100,33 @@ fn step(octopuses: &mut Octopuses) -> usize {
     flashed.len()
 }
 
-fn main() {
-    let opt = Opt::from_args();
-
-    let mut octopuses = read_octopuses(opt.input);
-
+fn count_flashes(mut octopuses: Octopuses, steps: usize) -> usize {
     let mut total = 0;
 
-    for _ in 0..100 {
+    for _ in 0..steps {
         total += step(&mut octopuses);
     }
 
+    total
+}
+
+fn find_when_all_flash(mut octopuses: Octopuses) -> usize {
+    for index in 1.. {
+        if step(&mut octopuses) == 100 {
+            return index;
+        }
+    }
+    panic!("Unreachable");
+}
+
+fn main() {
+    let opt = Opt::from_args();
+
+    let octopuses = read_octopuses(opt.input);
+
+    let total = count_flashes(octopuses.clone(), 100);
     println!("{}", total);
+
+    let all_flash_step = find_when_all_flash(octopuses);
+    println!("{}", all_flash_step);
 }
