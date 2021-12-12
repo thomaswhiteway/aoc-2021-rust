@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -54,31 +54,34 @@ fn parse_tunnels<P: AsRef<Path>>(input: P) -> Tunnels {
     tunnels
 }
 
-fn is_small_cave(name: &str) -> bool {
-    !is_large_cave(name)
-}
-
 fn is_large_cave(name: &str) -> bool {
     name.chars().all(|c| c.is_uppercase())
 }
 
-fn find_num_routes<F>(tunnels: &Tunnels, start: &str, end: &str, can_visit: F) -> usize 
-    where
-    F: Fn(&[&str], &str) -> bool
+fn find_num_routes<F, S>(
+    tunnels: &Tunnels,
+    start: &str,
+    end: &str,
+    initial_state: S,
+    can_visit: F,
+) -> usize
+where
+    F: Fn(&[&str], &str, &S) -> Option<S>,
+    S: Clone,
 {
-    let mut stack = vec![vec![start]];
+    let mut stack = vec![(vec![start], initial_state)];
     let mut num_routes = 0;
 
-    while let Some(route) = stack.pop() {
+    while let Some((route, state)) = stack.pop() {
         let last = *route.last().unwrap();
         if last == end {
             num_routes += 1;
         } else {
             for next in tunnels.get(last).unwrap() {
-                if can_visit(&route, next.as_str()) {
+                if let Some(new_state) = can_visit(&route, next.as_str(), &state) {
                     let mut new_route = route.clone();
                     new_route.push(next);
-                    stack.push(new_route);
+                    stack.push((new_route, new_state));
                 }
             }
         }
@@ -87,28 +90,33 @@ fn find_num_routes<F>(tunnels: &Tunnels, start: &str, end: &str, can_visit: F) -
     num_routes
 }
 
-fn has_duplicate_small_cave(route: &[&str]) -> bool {
-    let mut visited_small = HashSet::new();
-
-    for &cave in route {
-        if is_small_cave(cave) {
-            if visited_small.contains(cave) {
-                return true;
-            }
-
-            visited_small.insert(cave);
-        }
-    }
-
-    false
-}
-
 fn main() {
     let opt = Opt::from_args();
 
     let tunnels = parse_tunnels(opt.input);
-    let num_simple_routes = find_num_routes(&tunnels, "start", "end", |route, next| is_large_cave(next) || !route.contains(&next));
+    let num_simple_routes = find_num_routes(&tunnels, "start", "end", (), |route, next, _| {
+        if is_large_cave(next) || !route.contains(&next) {
+            Some(())
+        } else {
+            None
+        }
+    });
     println!("{}", num_simple_routes);
-    let num_complex_routes = find_num_routes(&tunnels, "start", "end", |route, next| is_large_cave(next) || !route.contains(&next) || (next != "start" && !has_duplicate_small_cave(route)));
+
+    let num_complex_routes = find_num_routes(
+        &tunnels,
+        "start",
+        "end",
+        true,
+        |route, next, &can_visit_small_cave_twice| {
+            if is_large_cave(next) || !route.contains(&next) {
+                Some(can_visit_small_cave_twice)
+            } else if can_visit_small_cave_twice && next != "start" {
+                Some(false)
+            } else {
+                None
+            }
+        },
+    );
     println!("{}", num_complex_routes);
 }
