@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -54,11 +54,18 @@ fn parse_tunnels<P: AsRef<Path>>(input: P) -> Tunnels {
     tunnels
 }
 
+fn is_small_cave(name: &str) -> bool {
+    !is_large_cave(name)
+}
+
 fn is_large_cave(name: &str) -> bool {
     name.chars().all(|c| c.is_uppercase())
 }
 
-fn find_num_routes(tunnels: &Tunnels, start: &str, end: &str) -> usize {
+fn find_num_routes<F>(tunnels: &Tunnels, start: &str, end: &str, can_visit: F) -> usize 
+    where
+    F: Fn(&[&str], &str) -> bool
+{
     let mut stack = vec![vec![start]];
     let mut num_routes = 0;
 
@@ -68,7 +75,7 @@ fn find_num_routes(tunnels: &Tunnels, start: &str, end: &str) -> usize {
             num_routes += 1;
         } else {
             for next in tunnels.get(last).unwrap() {
-                if is_large_cave(next) || !route.contains(&next.as_str()) {
+                if can_visit(&route, next.as_str()) {
                     let mut new_route = route.clone();
                     new_route.push(next);
                     stack.push(new_route);
@@ -80,10 +87,28 @@ fn find_num_routes(tunnels: &Tunnels, start: &str, end: &str) -> usize {
     num_routes
 }
 
+fn has_duplicate_small_cave(route: &[&str]) -> bool {
+    let mut visited_small = HashSet::new();
+
+    for &cave in route {
+        if is_small_cave(cave) {
+            if visited_small.contains(cave) {
+                return true;
+            }
+
+            visited_small.insert(cave);
+        }
+    }
+
+    false
+}
+
 fn main() {
     let opt = Opt::from_args();
 
     let tunnels = parse_tunnels(opt.input);
-    let num_routes = find_num_routes(&tunnels, "start", "end");
-    println!("{}", num_routes);
+    let num_simple_routes = find_num_routes(&tunnels, "start", "end", |route, next| is_large_cave(next) || !route.contains(&next));
+    println!("{}", num_simple_routes);
+    let num_complex_routes = find_num_routes(&tunnels, "start", "end", |route, next| is_large_cave(next) || !route.contains(&next) || (next != "start" && !has_duplicate_small_cave(route)));
+    println!("{}", num_complex_routes);
 }
