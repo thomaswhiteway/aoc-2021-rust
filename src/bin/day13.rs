@@ -65,8 +65,26 @@ impl Fold {
     }
 }
 
-fn parse_files<P: AsRef<Path>>(input: P) -> (Paper, Box<[Fold]>) {
+type Inputs = (Paper, Box<[Fold]>);
+
+fn parse_files<P: AsRef<Path>>(input: P) -> Inputs {
     parsing::parse_input(&fs::read_to_string(input).unwrap()).unwrap()
+}
+
+fn print_paper(paper: &Paper) {
+    let max_x = paper.iter().map(|pos| pos.x).max().unwrap();
+    let max_y = paper.iter().map(|pos| pos.y).max().unwrap();
+
+    for y in 0..=max_y {
+        for x in 0..=max_x {
+            if paper.contains(&Position { x, y }) {
+                print!("#");
+            } else {
+                print!(".");
+            }
+        }
+        println!();
+    }
 }
 
 fn main() {
@@ -76,10 +94,13 @@ fn main() {
 
     let next_paper = folds[0].apply(&paper);
     println!("{}", next_paper.len());
+
+    let final_paper = folds.iter().fold(paper, |paper, fold| fold.apply(&paper));
+    print_paper(&final_paper);
 }
 
 mod parsing {
-    use crate::{Axis, Fold, Paper, Position};
+    use crate::{Axis, Fold, Inputs, Position};
 
     use nom::bytes::complete::tag;
     use nom::character::complete::one_of;
@@ -120,7 +141,7 @@ mod parsing {
 
     pub(super) fn parse_input(
         input: &str,
-    ) -> Result<(Paper, Box<[Fold]>), Box<dyn std::error::Error + '_>> {
+    ) -> Result<Inputs, Box<dyn std::error::Error + '_>> {
         let (input, positions) = many1(position)(input).map_err(Box::new)?;
         let (input, _) = tag::<_, _, ()>("\n")(input).map_err(Box::new)?;
         let (_, folds) = many1(fold)(input).map_err(Box::new)?;
@@ -156,8 +177,8 @@ mod parsing {
             assert_eq!(fs[0].line, 7);
             assert_eq!(fs[1].axis, Axis::X);
             assert_eq!(fs[1].line, 5);
-        }   
-        
+        }
+
         #[test]
         fn test_full_parse() {
             let input = "0,14\n9,10\n0,3\n10,4\n4,11\n6,0\n6,12\n4,1\n0,13\n10,12\n3,4\n3,0\n8,4\n1,10\n2,14\n8,10\n9,0\n\nfold along y=7\nfold along x=5\n";
