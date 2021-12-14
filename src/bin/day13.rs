@@ -139,9 +139,7 @@ mod parsing {
         Ok((input, Fold { axis, line }))
     }
 
-    pub(super) fn parse_input(
-        input: &str,
-    ) -> Result<Inputs, Box<dyn std::error::Error + '_>> {
+    pub(super) fn parse_input(input: &str) -> Result<Inputs, Box<dyn std::error::Error + '_>> {
         let (input, positions) = many1(position)(input).map_err(Box::new)?;
         let (input, _) = tag::<_, _, ()>("\n")(input).map_err(Box::new)?;
         let (_, folds) = many1(fold)(input).map_err(Box::new)?;
