@@ -19,20 +19,19 @@ fn parse_input<P: AsRef<Path>>(input: P) -> Inputs {
     parsing::parse_input(&fs::read_to_string(input).unwrap()).unwrap()
 }
 
-fn apply_rules(rules: &Rules, current: Box<[char]>) -> Box<[char]> {
-    current
-        .iter()
-        .map(Option::Some)
-        .interleave(
-            current
-                .iter()
-                .tuple_windows()
-                .map(|(&a, &b)| rules.get(&(a, b))),
-        )
-        .flatten()
-        .cloned()
-        .collect::<Vec<_>>()
-        .into_boxed_slice()
+fn apply_rules(rules: &Rules, current: HashMap<(char, char), usize>) -> HashMap<(char, char), usize> {
+    let mut new_counts = HashMap::new();
+
+    for ((a, b), num) in current {
+        if let Some(&c) = rules.get(&(a, b)) {
+            *new_counts.entry((a, c)).or_default() += num;
+            *new_counts.entry((c, b)).or_default() += num;
+        } else {
+            *new_counts.entry((a, b)).or_default() += num;
+        }
+    }
+
+    new_counts
 }
 
 fn count<V: Eq + Clone + Hash, I: IntoIterator<Item = V>>(sequence: I) -> HashMap<V, usize> {
@@ -45,21 +44,49 @@ fn count<V: Eq + Clone + Hash, I: IntoIterator<Item = V>>(sequence: I) -> HashMa
     counts
 }
 
+fn count_chars_in_pairs(pair_counts: &HashMap<(char, char), usize>) -> HashMap<char, usize> {
+    let mut counts = HashMap::new();
+
+    for ((a, b), num) in pair_counts {
+        *counts.entry(*a).or_default() += num;
+        *counts.entry(*b).or_default() += num;
+    }
+
+    counts
+}
+
+fn display_offset(steps: usize, template: &[char], pair_counts: &HashMap<(char, char), usize>) {
+    let mut char_counts = count_chars_in_pairs(&pair_counts);
+    // All chars except for the first and last in the sequence appear twice.
+    *char_counts.entry(template[0]).or_default() += 1;
+    *char_counts.entry(template[template.len()-1]).or_default() += 1;
+    char_counts = char_counts.into_iter().map(|(c, count)| (c, count / 2)).collect();
+
+    let max = char_counts.values().max().unwrap();
+    let min = char_counts.values().min().unwrap();
+
+    println!("After {} steps: {}", steps, max - min);
+}
+
 fn main() {
     let opt = Opt::from_args();
 
     let (template, rules) = parse_input(opt.input);
 
-    let mut current = template;
+    let mut pair_counts = count(template.iter().cloned().tuple_windows::<(_, _)>());
+
     for _ in 0..10 {
-        current = apply_rules(&rules, current);
+        pair_counts = apply_rules(&rules, pair_counts);
     }
 
-    let counts = count(current.iter().cloned());
-    let max = counts.values().max().unwrap();
-    let min = counts.values().min().unwrap();
+    display_offset(10, &template, &pair_counts);
 
-    println!("After 10 steps: {}", max - min);
+    for _ in 0..30 {
+        pair_counts = apply_rules(&rules, pair_counts);
+    }
+
+    display_offset(40, &template, &pair_counts);
+
 }
 
 mod parsing {
