@@ -19,7 +19,10 @@ fn parse_input<P: AsRef<Path>>(input: P) -> Inputs {
     parsing::parse_input(&fs::read_to_string(input).unwrap()).unwrap()
 }
 
-fn apply_rules(rules: &Rules, current: HashMap<(char, char), usize>) -> HashMap<(char, char), usize> {
+fn apply_rules(
+    rules: &Rules,
+    current: HashMap<(char, char), usize>,
+) -> HashMap<(char, char), usize> {
     let mut new_counts = HashMap::new();
 
     for ((a, b), num) in current {
@@ -56,11 +59,14 @@ fn count_chars_in_pairs(pair_counts: &HashMap<(char, char), usize>) -> HashMap<c
 }
 
 fn display_offset(steps: usize, template: &[char], pair_counts: &HashMap<(char, char), usize>) {
-    let mut char_counts = count_chars_in_pairs(&pair_counts);
+    let mut char_counts = count_chars_in_pairs(pair_counts);
     // All chars except for the first and last in the sequence appear twice.
     *char_counts.entry(template[0]).or_default() += 1;
-    *char_counts.entry(template[template.len()-1]).or_default() += 1;
-    char_counts = char_counts.into_iter().map(|(c, count)| (c, count / 2)).collect();
+    *char_counts.entry(template[template.len() - 1]).or_default() += 1;
+    char_counts = char_counts
+        .into_iter()
+        .map(|(c, count)| (c, count / 2))
+        .collect();
 
     let max = char_counts.values().max().unwrap();
     let min = char_counts.values().min().unwrap();
@@ -86,7 +92,6 @@ fn main() {
     }
 
     display_offset(40, &template, &pair_counts);
-
 }
 
 mod parsing {
