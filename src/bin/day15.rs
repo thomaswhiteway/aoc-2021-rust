@@ -41,10 +41,60 @@ impl Position {
     }
 }
 
-type RiskMap = HashMap<Position, usize>;
+struct RiskMap {
+    risks: HashMap<Position, usize>,
+    mult: isize,
+    width: isize,
+    height: isize,
+}
+
+impl RiskMap {
+    fn new(risks: HashMap<Position, usize>) -> Self {
+        let width = risks.keys().map(|pos| pos.x).max().unwrap() + 1;
+        let height = risks.keys().map(|pos| pos.y).max().unwrap() + 1;
+        RiskMap {
+            risks,
+            mult: 1,
+            width,
+            height,
+        }
+    }
+
+    fn with_mult(&self, mult: isize) -> RiskMap {
+        RiskMap {
+            risks: self.risks.clone(),
+            mult,
+            width: self.width,
+            height: self.height,
+        }
+    }
+
+    fn top_left(&self) -> Position {
+        Position::new(0, 0)
+    }
+
+    fn bottom_right(&self) -> Position {
+        Position::new(self.mult * self.width - 1, self.mult * self.height - 1)
+    }
+
+    fn get(&self, position: &Position) -> Option<usize> {
+        let x = position.x % self.width;
+        let x_wrap = position.x / self.width;
+        let y = position.y % self.width;
+        let y_wrap = position.y / self.width;
+
+        if x_wrap >= self.mult || y_wrap >= self.mult {
+            return None;
+        }
+
+        self.risks
+            .get(&Position::new(x, y))
+            .map(|&risk| (((risk + x_wrap as usize + y_wrap as usize) - 1) % 9) + 1)
+    }
+}
 
 fn parse_risk_map<P: AsRef<Path>>(input: P) -> RiskMap {
-    BufReader::new(File::open(input).unwrap())
+    let risks = BufReader::new(File::open(input).unwrap())
         .lines()
         .map(Result::unwrap)
         .enumerate()
@@ -62,7 +112,9 @@ fn parse_risk_map<P: AsRef<Path>>(input: P) -> RiskMap {
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect();
+
+    RiskMap::new(risks)
 }
 
 #[derive(PartialEq, Eq)]
@@ -114,7 +166,7 @@ fn find_lowest_total_risk(risks: &RiskMap, start: Position, end: Position) -> Op
 
             for adjacent in candidate.position.adjacent() {
                 if !visited.contains(&adjacent) {
-                    if let Some(&risk) = risks.get(&adjacent) {
+                    if let Some(risk) = risks.get(&adjacent) {
                         candidates.push(Candidate::new(adjacent, end, candidate.total_risk + risk))
                     }
                 }
@@ -130,10 +182,13 @@ fn main() {
 
     let risks = parse_risk_map(opt.input);
 
-    let max_x = risks.keys().map(|pos| pos.x).max().unwrap();
-    let max_y = risks.keys().map(|pos| pos.y).max().unwrap();
+    let total_risk =
+        find_lowest_total_risk(&risks, risks.top_left(), risks.bottom_right()).unwrap();
+    println!("{}", total_risk);
+
+    let risks = risks.with_mult(5);
 
     let total_risk =
-        find_lowest_total_risk(&risks, Position::new(0, 0), Position::new(max_x, max_y)).unwrap();
+        find_lowest_total_risk(&risks, risks.top_left(), risks.bottom_right()).unwrap();
     println!("{}", total_risk);
 }
