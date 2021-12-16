@@ -107,36 +107,14 @@ fn read_literal_payload(reader: &mut BitReader) -> Payload {
     Payload::Literal(value)
 }
 
-fn read_bits(reader: &mut BitReader, length: u64) -> Box<[u8]> {
-    let mut bytes = vec![];
-    let mut remaining = length;
-    let mut subreader = reader.relative_reader();
-
-    while remaining > 0 {
-        let value = if remaining >= 8 {
-            subreader.read_u8(8).unwrap()
-        } else {
-            subreader.read_u8(remaining as u8).unwrap() << (8 - remaining)
-        };
-
-        bytes.push(value);
-
-        remaining = remaining.saturating_sub(8);
-    }
-
-    reader.skip(length).unwrap();
-
-    bytes.into_boxed_slice()
-}
-
 fn read_defined_length_packets(reader: &mut BitReader) -> Box<[Packet]> {
     let length = reader.read_u64(15).unwrap();
-    let data = read_bits(reader, length);
-    let mut subreader = BitReader::new(&data);
+
+    let end = reader.position() + length;
 
     let mut packets = vec![];
-    while subreader.remaining() >= 8 {
-        packets.push(read_packet(&mut subreader).unwrap());
+    while reader.position() < end {
+        packets.push(read_packet(reader));
     }
 
     packets.into_boxed_slice()
@@ -147,7 +125,7 @@ fn read_defined_num_packets(reader: &mut BitReader) -> Box<[Packet]> {
 
     let mut packets = vec![];
     for _ in 0..num_packets {
-        packets.push(read_packet(reader).unwrap());
+        packets.push(read_packet(reader));
     }
 
     packets.into_boxed_slice()
@@ -171,11 +149,7 @@ fn read_sub_packets(reader: &mut BitReader) -> Box<[Packet]> {
     }
 }
 
-fn read_packet(reader: &mut BitReader) -> Option<Packet> {
-    if reader.remaining() < 8 {
-        return None;
-    }
-
+fn read_packet(reader: &mut BitReader) -> Packet {
     let version = reader.read_u8(3).unwrap();
     let type_id = reader.read_u8(3).unwrap();
 
@@ -192,32 +166,22 @@ fn read_packet(reader: &mut BitReader) -> Option<Packet> {
         _ => panic!("Unknown type ID {}", type_id),
     };
 
-    Some(Packet { version, payload })
+    Packet { version, payload }
 }
 
-fn parse_packets(data: &[u8]) -> Box<[Packet]> {
+fn parse_packet(data: &[u8]) -> Packet {
     let mut reader = BitReader::new(data);
-    let mut packets = vec![];
-
-    while let Some(packet) = read_packet(&mut reader) {
-        packets.push(packet);
-    }
-
-    packets.into_boxed_slice()
-}
-
-fn count_total_versions(packets: &[Packet]) -> usize {
-    packets.iter().map(Packet::total_version).sum()
+    read_packet(&mut reader)
 }
 
 fn main() {
     let opt = Opt::from_args();
 
     let data = read_data(opt.input);
-    let packets = parse_packets(&data);
-    let total_version = count_total_versions(&packets);
+    let packet = parse_packet(&data);
+    let total_version = packet.total_version();
     println!("{}", total_version);
-    println!("{}", packets[0].evaluate());
+    println!("{}", packet.evaluate());
 }
 
 #[cfg(test)]
@@ -227,38 +191,38 @@ mod test {
     #[test]
     fn test_one() {
         let data = hex::decode("8A004A801A8002F478").unwrap();
-        let packets = parse_packets(&data);
-        let total_version = count_total_versions(&packets);
+        let packets = parse_packet(&data);
+        let total_version = packets.total_version();
         assert_eq!(total_version, 16);
     }
 
     #[test]
     fn test_two() {
         let data = hex::decode("620080001611562C8802118E34").unwrap();
-        let packets = parse_packets(&data);
-        let total_version = count_total_versions(&packets);
+        let packets = parse_packet(&data);
+        let total_version = packets.total_version();
         assert_eq!(total_version, 12);
     }
 
     #[test]
     fn test_three() {
         let data = hex::decode("C0015000016115A2E0802F182340").unwrap();
-        let packets = parse_packets(&data);
-        let total_version = count_total_versions(&packets);
+        let packets = parse_packet(&data);
+        let total_version = packets.total_version();
         assert_eq!(total_version, 23);
     }
 
     #[test]
     fn test_four() {
         let data = hex::decode("A0016C880162017C3686B18A3D4780").unwrap();
-        let packets = parse_packets(&data);
-        let total_version = count_total_versions(&packets);
+        let packets = parse_packet(&data);
+        let total_version = packets.total_version();
         assert_eq!(total_version, 31);
     }
 
     #[test]
     fn test_parse_literal() {
         let data = hex::decode("D2FE28").unwrap();
-        parse_packets(&data);
+        parse_packet(&data);
     }
 }
