@@ -1,5 +1,4 @@
 use bitreader::BitReader;
-use hex;
 use std::fs;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -13,13 +12,71 @@ struct Opt {
 #[derive(Debug)]
 enum Payload {
     Literal(u64),
-    Operator(u8, Box<[Packet]>),
+    Sum(Box<[Packet]>),
+    Product(Box<[Packet]>),
+    Minimum(Box<[Packet]>),
+    Maximum(Box<[Packet]>),
+    GreaterThan(Box<[Packet]>),
+    LessThan(Box<[Packet]>),
+    EqualTo(Box<[Packet]>),
+}
+
+impl Payload {
+    fn evaluate(&self) -> u64 {
+        use Payload::*;
+        match self {
+            Literal(val) => *val,
+            Sum(packets) => packets.iter().map(Packet::evaluate).sum(),
+            Product(packets) => packets.iter().map(Packet::evaluate).product(),
+            Minimum(packets) => packets.iter().map(Packet::evaluate).min().unwrap(),
+            Maximum(packets) => packets.iter().map(Packet::evaluate).max().unwrap(),
+            GreaterThan(packets) => {
+                if packets[0].evaluate() > packets[1].evaluate() {
+                    1
+                } else {
+                    0
+                }
+            }
+            LessThan(packets) => {
+                if packets[0].evaluate() < packets[1].evaluate() {
+                    1
+                } else {
+                    0
+                }
+            }
+            EqualTo(packets) => {
+                if packets[0].evaluate() == packets[1].evaluate() {
+                    1
+                } else {
+                    0
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
 struct Packet {
     version: u8,
     payload: Payload,
+}
+
+impl Packet {
+    fn evaluate(&self) -> u64 {
+        self.payload.evaluate()
+    }
+
+    fn total_version(&self) -> usize {
+        use Payload::*;
+        self.version as usize
+            + match &self.payload {
+                Literal(_) => 0,
+                Sum(packets) | Product(packets) | Minimum(packets) | Maximum(packets)
+                | GreaterThan(packets) | LessThan(packets) | EqualTo(packets) => {
+                    packets.iter().map(Packet::total_version).sum()
+                }
+            }
+    }
 }
 
 fn read_data<P: AsRef<Path>>(input: P) -> Box<[u8]> {
@@ -96,16 +153,22 @@ fn read_defined_num_packets(reader: &mut BitReader) -> Box<[Packet]> {
     packets.into_boxed_slice()
 }
 
-fn read_operator_payload(type_id: u8, reader: &mut BitReader) -> Payload {
+fn read_operator_payload<F>(reader: &mut BitReader, cons: F) -> Payload
+where
+    F: Fn(Box<[Packet]>) -> Payload,
+{
+    let packets = read_sub_packets(reader);
+    cons(packets)
+}
+
+fn read_sub_packets(reader: &mut BitReader) -> Box<[Packet]> {
     let length_type = reader.read_u8(1).unwrap();
 
-    let packets = if length_type == 0 {
+    if length_type == 0 {
         read_defined_length_packets(reader)
     } else {
         read_defined_num_packets(reader)
-    };
-
-    Payload::Operator(type_id, packets)
+    }
 }
 
 fn read_packet(reader: &mut BitReader) -> Option<Packet> {
@@ -116,10 +179,17 @@ fn read_packet(reader: &mut BitReader) -> Option<Packet> {
     let version = reader.read_u8(3).unwrap();
     let type_id = reader.read_u8(3).unwrap();
 
-    let payload = if type_id == 4 {
-        read_literal_payload(reader)
-    } else {
-        read_operator_payload(type_id, reader)
+    use Payload::*;
+    let payload = match type_id {
+        0 => read_operator_payload(reader, Sum),
+        1 => read_operator_payload(reader, Product),
+        2 => read_operator_payload(reader, Minimum),
+        3 => read_operator_payload(reader, Maximum),
+        4 => read_literal_payload(reader),
+        5 => read_operator_payload(reader, GreaterThan),
+        6 => read_operator_payload(reader, LessThan),
+        7 => read_operator_payload(reader, EqualTo),
+        _ => panic!("Unknown type ID {}", type_id),
     };
 
     Some(Packet { version, payload })
@@ -137,16 +207,7 @@ fn parse_packets(data: &[u8]) -> Box<[Packet]> {
 }
 
 fn count_total_versions(packets: &[Packet]) -> usize {
-    packets
-        .iter()
-        .map(|packet| {
-            packet.version as usize
-                + match &packet.payload {
-                    Payload::Literal(_) => 0,
-                    Payload::Operator(_, subpackets) => count_total_versions(&subpackets),
-                }
-        })
-        .sum()
+    packets.iter().map(Packet::total_version).sum()
 }
 
 fn main() {
@@ -156,6 +217,7 @@ fn main() {
     let packets = parse_packets(&data);
     let total_version = count_total_versions(&packets);
     println!("{}", total_version);
+    println!("{}", packets[0].evaluate());
 }
 
 #[cfg(test)]
