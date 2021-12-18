@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -450,10 +451,19 @@ fn parse_numbers<P: AsRef<Path>>(input: P) -> impl Iterator<Item = Number> {
 fn main() {
     let opt = Opt::from_args();
 
-    let numbers = parse_numbers(opt.input);
-    let total = numbers.sum::<Number>();
+    let numbers = parse_numbers(opt.input).collect::<Vec<_>>();
+    let total = numbers.iter().cloned().sum::<Number>();
     println!("{}", total);
     println!("{}", total.magnitude());
+
+    let max_mag = numbers
+        .iter()
+        .cartesian_product(numbers.iter())
+        .filter(|(x, y)| x != y)
+        .map(|(x, y)| (x.clone() + y.clone()).magnitude())
+        .max()
+        .unwrap();
+    println!("{}", max_mag);
 }
 
 mod parsing {
