@@ -83,7 +83,11 @@ fn find_max_height(y_range: Range) -> i64 {
 }
 
 fn y_intercepts(y_range: Range, dy: i64) -> impl Iterator<Item = i64> {
-    let (base_t, v) = if dy > 0 { (dy * 2 + 1, dy + 1) } else { (0, -dy) };
+    let (base_t, v) = if dy > 0 {
+        (dy * 2 + 1, dy + 1)
+    } else {
+        (0, -dy)
+    };
 
     (0..)
         .map(move |dt| (base_t + dt, -(dt * v + (dt - 1) * dt / 2)))
@@ -121,7 +125,7 @@ fn find_intercept(init_dx: i64, init_dy: i64, x_range: Range, y_range: Range) ->
 
         x += dx;
         y += dy;
-        
+
         if dx > 0 {
             dx -= 1;
         }
@@ -130,6 +134,7 @@ fn find_intercept(init_dx: i64, init_dy: i64, x_range: Range, y_range: Range) ->
     panic!("Unhittable");
 }
 
+#[allow(clippy::suspicious_map)]
 fn num_valid_velocities(x_range: Range, y_range: Range) -> usize {
     let min_x_velocity = find_min_x_velocity(x_range);
     let max_x_velocity = find_max_x_velocity(x_range);
@@ -139,7 +144,10 @@ fn num_valid_velocities(x_range: Range, y_range: Range) -> usize {
     (min_x_velocity..=max_x_velocity)
         .cartesian_product(min_y_velocity..=max_y_velocity)
         .filter(|&(dx, dy)| hits(dx, dy, x_range, y_range))
-        .map(|(dx, dy)| find_intercept(dx, dy, x_range, y_range).expect(&format!("{}, {} missed target", dx, dy)))
+        .map(|(dx, dy)| {
+            find_intercept(dx, dy, x_range, y_range)
+                .unwrap_or_else(|| panic!("{}, {} missed target", dx, dy))
+        })
         .count()
 }
 
