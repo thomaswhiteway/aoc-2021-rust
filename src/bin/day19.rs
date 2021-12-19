@@ -1,5 +1,6 @@
 use itertools::Itertools;
-use nalgebra::{matrix, SMatrix, SVector};
+use nalgebra::{matrix, vector, SMatrix, SVector};
+use std::cmp::{max, min};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -56,6 +57,41 @@ impl Scanner {
 
     fn distance_to(&self, other: &Self) -> i32 {
         (self.position - other.position).abs().sum()
+    }
+
+    fn translated_overlap(
+        &self,
+        other: &Self,
+        translation: &SVector<i32, 3>,
+    ) -> (SVector<i32, 3>, SVector<i32, 3>) {
+        let position = self.position + translation;
+        (
+            vector![
+                max(position[0], other.position[0]) - 1000,
+                max(position[1], other.position[1]) - 1000,
+                max(position[2], other.position[2]) - 1000
+            ],
+            vector![
+                min(position[0], other.position[0]) + 1000,
+                min(position[1], other.position[1]) + 1000,
+                min(position[2], other.position[2]) + 1000
+            ],
+        )
+    }
+
+    fn beacons_in_range<'a>(
+        &'a self,
+        overlap: &'a (SVector<i32, 3>, SVector<i32, 3>),
+    ) -> impl Iterator<Item = &Position> + 'a {
+        let (min, max) = overlap;
+        self.beacons.iter().filter(|position| {
+            ((position[0] >= min[0])
+                && (position[1] >= min[1])
+                && (position[2] >= min[2])
+                && (position[0] <= max[0])
+                && (position[1] <= max[1])
+                && (position[2] <= max[2]))
+        })
     }
 }
 
@@ -133,10 +169,28 @@ fn find_scanner_to_place(
     for scanner in remaining_scanners.iter() {
         for placed_scanner in placed_scanners {
             for translation in scanner.all_translations(&placed_scanner) {
-                let scanner = scanner.translate(&translation);
-                if scanner.overlapping_beacons(&placed_scanner).count() >= 12 {
+                let translated_overlap = scanner.translated_overlap(&placed_scanner, &translation);
+                let placed_overlapped_beacons = placed_scanner
+                    .beacons_in_range(&translated_overlap)
+                    .cloned()
+                    .collect::<HashSet<_>>();
+                if placed_overlapped_beacons.len() < 12 {
+                    continue;
+                }
+                let orig_overlap = (
+                    translated_overlap.0 - translation,
+                    translated_overlap.1 - translation,
+                );
+                 let mut translated_overlapped_beacons = scanner
+                     .beacons_in_range(&orig_overlap)
+                     .map(|pos| pos + translation);
+                //     .collect::<HashSet<_>>();
+
+                //if placed_overlapped_beacons == translated_overlapped_beacons {
+                if translated_overlapped_beacons.all(|pos| placed_overlapped_beacons.contains(&pos)) && scanner
+                .beacons_in_range(&orig_overlap).count() == placed_overlapped_beacons.len() {
                     println!("Placed scanner {} at {:?}", scanner.index, translation);
-                    return Some(scanner);
+                    return Some(scanner.translate(&translation));
                 }
             }
         }
@@ -148,15 +202,14 @@ fn find_scanner_to_place(
 fn place_scanners(scanners: &[Scanner]) -> Box<[Scanner]> {
     let rotations = all_rotations().collect::<Vec<_>>();
     let mut placed_scanners = vec![scanners[0].clone()];
-    let mut remaining_scanners = scanners[1..]
+    let mut possible_scanners = scanners[1..]
         .iter()
         .flat_map(|scanner| rotations.iter().map(|rotation| scanner.rotate(rotation)))
         .collect::<Vec<_>>();
 
-    while !remaining_scanners.is_empty() {
-        let scanner =
-            find_scanner_to_place(&placed_scanners, &remaining_scanners).unwrap();
-        remaining_scanners.retain(|s| s.index != scanner.index);
+    while !possible_scanners.is_empty() {
+        let scanner = find_scanner_to_place(&placed_scanners, &possible_scanners).unwrap();
+        possible_scanners.retain(|s| s.index != scanner.index);
         placed_scanners.push(scanner);
     }
 
