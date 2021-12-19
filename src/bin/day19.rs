@@ -15,13 +15,14 @@ type Position = SVector<i32, 3>;
 #[derive(Clone)]
 struct Scanner {
     index: i32, 
+    position: Position,
     beacons: HashSet<Position>,
 }
 
 impl Scanner {
     fn rotate(&self, rotation: &SMatrix<i32, 3, 3>) -> Self {
         let beacons = self.beacons.iter().map(|pos| rotation * pos).collect();
-        Scanner { index: self.index, beacons }
+        Scanner { index: self.index, position: self.position, beacons }
     }
 
     fn all_translations<'a>(&'a self, other: &'a Self) -> impl Iterator<Item=SVector<i32, 3>> + 'a {
@@ -29,12 +30,17 @@ impl Scanner {
     }
 
     fn translate(&self, translation: &SVector<i32, 3>) -> Scanner {
+        let position = self.position + translation;
         let beacons = self.beacons.iter().map(|pos| pos + translation).collect();
-        Scanner { index: self.index, beacons }
+        Scanner { index: self.index, position, beacons }
     }
 
     fn overlapping_beacons<'a>(&'a self, other: &'a Self) -> impl Iterator<Item=&Position> + 'a {
         self.beacons.intersection(&other.beacons)
+    }
+
+    fn distance_to(&self, other: &Self) -> i32 {
+        (self.position - other.position).abs().sum()
     }
 }
 
@@ -115,7 +121,7 @@ fn find_scanner_to_place(placed_scanners: &[Scanner], remaining_scanners: &[Scan
     None
 }
 
-fn find_all_positions(scanners: &[Scanner]) -> HashSet<Position> {
+fn place_scanners(scanners: &[Scanner]) -> Box<[Scanner]> {
     let mut placed_scanners = vec![scanners[0].clone()];
     let mut remaining_scanners = scanners[1..].to_vec();
 
@@ -125,16 +131,27 @@ fn find_all_positions(scanners: &[Scanner]) -> HashSet<Position> {
         placed_scanners.push(scanner);
     }
 
-    placed_scanners.into_iter().fold(HashSet::new(), |x, y| x.union(&y.beacons).cloned().collect())
-    
+    placed_scanners.into_boxed_slice()
+}
+
+fn find_all_positions(scanners: &[Scanner]) -> HashSet<Position> {
+    scanners.into_iter().fold(HashSet::new(), |x, y| x.union(&y.beacons).cloned().collect())
+}
+
+fn find_max_distance(scanners: &[Scanner]) -> i32 {
+    scanners.iter().cartesian_product(scanners).map(|(x, y)| x.distance_to(y)).max().unwrap()
 }
 
 fn main() {
     let opt = Opt::from_args();
     let scanners = parse_scanners(opt.input);
 
-    let all_positions = find_all_positions(&scanners);
+    let placed_scanners = place_scanners(&scanners);
+    let all_positions = find_all_positions(&placed_scanners);
     println!("{}", all_positions.len());
+
+    let max_distance = find_max_distance(&placed_scanners);
+    println!("{}", max_distance);
 }
 
 
@@ -169,6 +186,7 @@ mod parsing {
         let (input, positions) = many1(position)(input)?;
         Ok((input, Scanner {
             index,
+            position: vector![0, 0, 0],
             beacons: positions.into_iter().collect()
         }))
     }
