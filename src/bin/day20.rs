@@ -166,13 +166,13 @@ impl Image {
         }
     }
 
-    fn y_range(&self) -> impl Iterator<Item=isize> {
+    fn y_range(&self) -> impl Iterator<Item = isize> {
         let min_y = self.non_default.iter().map(|pos| pos.y).min().unwrap();
         let max_y = self.non_default.iter().map(|pos| pos.y).max().unwrap();
         min_y..=max_y
     }
 
-    fn x_range(&self) -> impl Iterator<Item=isize> {
+    fn x_range(&self) -> impl Iterator<Item = isize> {
         let min_x = self.non_default.iter().map(|pos| pos.x).min().unwrap();
         let max_x = self.non_default.iter().map(|pos| pos.x).max().unwrap();
         min_x..=max_x
@@ -191,7 +191,8 @@ fn read_image(reader: impl BufRead) -> Image {
         .map(Result::unwrap)
         .enumerate()
         .flat_map(|(y, line)| {
-            line.trim_end().chars()
+            line.trim_end()
+                .chars()
                 .map(Pixel::try_from)
                 .map(Result::unwrap)
                 .enumerate()
