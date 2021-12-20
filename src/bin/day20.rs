@@ -220,6 +220,7 @@ fn parse_input<P: AsRef<Path>>(input: P) -> (Algorithm, Image) {
     (algo, image)
 }
 
+#[allow(dead_code)]
 fn display_image(image: &Image) {
     for y in image.y_range() {
         for x in image.x_range() {
@@ -235,11 +236,12 @@ fn main() {
 
     let (algo, mut image) = parse_input(opt.input);
 
-    display_image(&image);
-    image = image.apply_algorithm(&algo);
-    display_image(&image);
-    image = image.apply_algorithm(&algo);
-    display_image(&image);
-
-    println!("{}", image.num_light_pixels().unwrap())
+    for index in 1..=50 {
+        image = image.apply_algorithm(&algo);
+        if let Some(num) = image.num_light_pixels() {
+            println!("{}: {}", index, num);
+        } else {
+            println!("{}: inf", index);
+        }
+    }
 }
