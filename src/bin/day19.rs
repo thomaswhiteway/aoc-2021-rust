@@ -181,14 +181,16 @@ fn find_scanner_to_place(
                     translated_overlap.0 - translation,
                     translated_overlap.1 - translation,
                 );
-                 let mut translated_overlapped_beacons = scanner
-                     .beacons_in_range(&orig_overlap)
-                     .map(|pos| pos + translation);
+                let mut translated_overlapped_beacons = scanner
+                    .beacons_in_range(&orig_overlap)
+                    .map(|pos| pos + translation);
                 //     .collect::<HashSet<_>>();
 
                 //if placed_overlapped_beacons == translated_overlapped_beacons {
-                if translated_overlapped_beacons.all(|pos| placed_overlapped_beacons.contains(&pos)) && scanner
-                .beacons_in_range(&orig_overlap).count() == placed_overlapped_beacons.len() {
+                if translated_overlapped_beacons.all(|pos| placed_overlapped_beacons.contains(&pos))
+                    && scanner.beacons_in_range(&orig_overlap).count()
+                        == placed_overlapped_beacons.len()
+                {
                     println!("Placed scanner {} at {:?}", scanner.index, translation);
                     return Some(scanner.translate(&translation));
                 }

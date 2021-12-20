@@ -1,10 +1,10 @@
+use itertools::Itertools;
 use std::fmt::Debug;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
-use itertools::Itertools;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -182,7 +182,7 @@ fn main() {
     }
 
     println!("{}", number_to_string(&total));
-    
+
     let magnitude = get_magnitude(&total);
     println!("{}", magnitude);
 
@@ -197,7 +197,7 @@ fn main() {
         })
         .max()
         .unwrap();
-    println!("{}", max_mag);    
+    println!("{}", max_mag);
 }
 
 #[cfg(test)]
