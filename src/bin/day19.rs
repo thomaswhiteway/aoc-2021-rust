@@ -51,6 +51,7 @@ impl Scanner {
         }
     }
 
+    #[allow(dead_code)]
     fn overlapping_beacons<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = &Position> + 'a {
         self.beacons.intersection(&other.beacons)
     }
@@ -85,12 +86,12 @@ impl Scanner {
     ) -> impl Iterator<Item = &Position> + 'a {
         let (min, max) = overlap;
         self.beacons.iter().filter(|position| {
-            ((position[0] >= min[0])
+            (position[0] >= min[0])
                 && (position[1] >= min[1])
                 && (position[2] >= min[2])
                 && (position[0] <= max[0])
                 && (position[1] <= max[1])
-                && (position[2] <= max[2]))
+                && (position[2] <= max[2])
         })
     }
 }
@@ -168,8 +169,8 @@ fn find_scanner_to_place(
 ) -> Option<Scanner> {
     for scanner in remaining_scanners.iter() {
         for placed_scanner in placed_scanners {
-            for translation in scanner.all_translations(&placed_scanner) {
-                let translated_overlap = scanner.translated_overlap(&placed_scanner, &translation);
+            for translation in scanner.all_translations(placed_scanner) {
+                let translated_overlap = scanner.translated_overlap(placed_scanner, &translation);
                 let placed_overlapped_beacons = placed_scanner
                     .beacons_in_range(&translated_overlap)
                     .cloned()
@@ -219,7 +220,7 @@ fn place_scanners(scanners: &[Scanner]) -> Box<[Scanner]> {
 }
 
 fn find_all_positions(scanners: &[Scanner]) -> HashSet<Position> {
-    scanners.into_iter().fold(HashSet::new(), |x, y| {
+    scanners.iter().fold(HashSet::new(), |x, y| {
         x.union(&y.beacons).cloned().collect()
     })
 }

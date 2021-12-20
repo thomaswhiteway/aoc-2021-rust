@@ -96,8 +96,8 @@ fn explode(number: &mut Vec<Token>, index: usize) {
         }
     }
 
-    for ix in index + 5..number.len() {
-        if let Token::Literal(val) = &mut number[ix] {
+    for token in number.iter_mut().skip(index + 5) {
+        if let Token::Literal(val) = token {
             (*val) += right;
             break;
         }
