@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Ord;
+use std::collections::{hash_map, BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -152,6 +153,25 @@ impl UniverseState {
     }
 }
 
+impl PartialOrd for UniverseState {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(
+            Ord::cmp(&self.players[0].score, &other.players[0].score)
+                .then_with(|| Ord::cmp(&self.players[1].score, &other.players[1].score))
+                .then_with(|| Ord::cmp(&self.players[0].position, &other.players[0].position))
+                .then_with(|| Ord::cmp(&self.players[1].position, &other.players[1].position))
+                .then_with(|| Ord::cmp(&self.next_player, &other.next_player))
+                .reverse(),
+        )
+    }
+}
+
+impl Ord for UniverseState {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
 fn get_splits() -> [usize; 10] {
     let mut splits = [0; 10];
 
@@ -177,28 +197,32 @@ fn count_winning_universes(universes: &HashMap<UniverseState, usize>, player: us
 fn play_quantum_game(start_pos: [usize; 2]) -> QuantumOutcome {
     let splits = get_splits();
 
+    let initial_state = UniverseState::new(start_pos);
+
     let mut universes: HashMap<UniverseState, usize> = HashMap::new();
-    universes.insert(UniverseState::new(start_pos), 1);
+    universes.insert(initial_state, 1);
 
-    while universes
-        .keys()
-        .any(|state| state.winning_player().is_none())
-    {
-        let mut new_universes = HashMap::new();
+    let mut in_play_states = BinaryHeap::new();
+    in_play_states.push(initial_state);
 
-        for (state, num_universes) in universes {
-            if state.winning_player().is_some() {
-                *new_universes.entry(state).or_default() += num_universes;
-            } else {
-                for (roll, &num_new_universes) in splits.iter().enumerate() {
-                    let new_state = state.with_roll(roll);
-                    *new_universes.entry(new_state).or_default() +=
-                        num_universes * num_new_universes;
+    while let Some(state) = in_play_states.pop() {
+        let num_universes = universes.remove(&state).unwrap();
+
+        for (roll, &num_new_universes) in splits.iter().enumerate() {
+            let new_state = state.with_roll(roll);
+            let total_new_universes = num_universes * num_new_universes;
+
+            match universes.entry(new_state) {
+                hash_map::Entry::Occupied(mut entry) => *entry.get_mut() += total_new_universes,
+                hash_map::Entry::Vacant(entry) => {
+                    entry.insert(total_new_universes);
+
+                    if new_state.winning_player().is_none() {
+                        in_play_states.push(new_state);
+                    }
                 }
             }
         }
-
-        universes = new_universes
     }
 
     QuantumOutcome {
