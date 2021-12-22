@@ -156,22 +156,21 @@ impl<T: Update + Clone + Default + Eq> Update for Partition<T> {
 }
 
 trait GetRegions {
-    fn regions(&self) -> Box<dyn Iterator<Item = (Vec<i64>, bool)> + '_>;
+    fn regions(&self) -> Box<dyn Iterator<Item = (i64, bool)> + '_>;
 }
 
 impl GetRegions for bool {
-    fn regions(&self) -> Box<dyn Iterator<Item = (Vec<i64>, bool)> + '_> {
-        Box::new([(Vec::with_capacity(3), *self)].into_iter())
+    fn regions(&self) -> Box<dyn Iterator<Item = (i64, bool)> + '_> {
+        Box::new([(1, *self)].into_iter())
     }
 }
 
 impl<T: GetRegions + Default + Clone + Eq> GetRegions for Partition<T> {
-    fn regions(&self) -> Box<dyn Iterator<Item = (Vec<i64>, bool)> + '_> {
+    fn regions(&self) -> Box<dyn Iterator<Item = (i64, bool)> + '_> {
         Box::new(self.sections().flat_map(|(subrange, width)| {
-            subrange.regions().map(move |(mut dimensions, on)| {
-                dimensions.push(width);
-                (dimensions, on)
-            })
+            subrange
+                .regions()
+                .map(move |(volume, on)| (volume * width, on))
         }))
     }
 }
@@ -191,16 +190,14 @@ impl CubeMap {
         );
     }
 
-    fn regions_on(&self) -> impl Iterator<Item = Vec<i64>> + '_ {
+    fn regions_on(&self) -> impl Iterator<Item = i64> + '_ {
         self.0
             .regions()
-            .filter_map(|(dimensions, on)| if on { Some(dimensions) } else { None })
+            .filter_map(|(volume, on)| if on { Some(volume) } else { None })
     }
 
     fn num_cubes_on(&self) -> i64 {
-        self.regions_on()
-            .map(|dimensions| dimensions.iter().product::<i64>())
-            .sum()
+        self.regions_on().sum()
     }
 }
 
