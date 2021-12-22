@@ -79,29 +79,37 @@ impl<T: Default + Clone + Eq> Partition<T> {
         }
     }
 
+    fn prepend_range(&mut self, val: i64) -> usize {
+        self.0.insert(
+            0,
+            Range {
+                start: val,
+                contents: Default::default(),
+            },
+        );
+        0
+    }
+
+    fn split_range(&mut self, index: usize, val: i64) -> usize {
+        self.0.insert(
+            index + 1,
+            Range {
+                start: val,
+                contents: self.0[index].contents.clone(),
+            },
+        );
+        index + 1
+    }
+
     fn split_at(&mut self, val: i64) -> usize {
         if let Some(index) = self.find_range_index(val) {
             if self.0[index as usize].start != val {
-                self.0.insert(
-                    index + 1,
-                    Range {
-                        start: val,
-                        contents: self.0[index].contents.clone(),
-                    },
-                );
-                index + 1
+                self.split_range(index, val)
             } else {
                 index
             }
         } else {
-            self.0.insert(
-                0,
-                Range {
-                    start: val,
-                    contents: Default::default(),
-                },
-            );
-            0
+            self.prepend_range(val)
         }
     }
 
@@ -110,9 +118,9 @@ impl<T: Default + Clone + Eq> Partition<T> {
         while index < self.0.len() - 1 {
             if self.0[index].contents == self.0[index + 1].contents {
                 self.0.remove(index + 1);
+            } else {
+                index += 1;
             }
-
-            index += 1;
         }
     }
 
@@ -162,21 +170,26 @@ impl CubeMap {
         );
     }
 
-    fn num_cubes_on(&self) -> usize {
-        let mut total = 0;
-
+    fn regions(&self) -> impl Iterator<Item = ((i64, i64, i64), bool)> + '_ {
         let x_ranges = &self.0;
-        for (y_ranges, x_width) in x_ranges.sections() {
-            for (z_ranges, y_width) in y_ranges.sections() {
-                for (on, z_width) in z_ranges.sections() {
-                    if *on {
-                        total += (x_width * y_width * z_width) as usize;
-                    }
-                }
-            }
-        }
+        x_ranges.sections().flat_map(|(y_ranges, width)| {
+            y_ranges.sections().flat_map(move |(z_ranges, height)| {
+                z_ranges
+                    .sections()
+                    .map(move |(on, depth)| ((width, height, depth), *on))
+            })
+        })
+    }
 
-        total
+    fn regions_on(&self) -> impl Iterator<Item = (i64, i64, i64)> + '_ {
+        self.regions()
+            .filter_map(|(dimensions, on)| if on { Some(dimensions) } else { None })
+    }
+
+    fn num_cubes_on(&self) -> i64 {
+        self.regions_on()
+            .map(|(width, height, depth)| width * height * depth)
+            .sum()
     }
 }
 
