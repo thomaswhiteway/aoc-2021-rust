@@ -38,6 +38,12 @@ impl Region {
     }
 }
 
+trait CubeMap {
+    fn new() -> Self;
+    fn apply(&mut self, instruction: &Instruction);
+    fn num_cubes_on(&self) -> usize;
+}
+
 #[derive(Debug)]
 struct Instruction {
     on: bool,
@@ -47,7 +53,7 @@ struct Instruction {
 
 struct SmallMap(HashSet<Vector3<i64>>);
 
-impl SmallMap {
+impl CubeMap for SmallMap {
     fn new() -> Self {
         SmallMap(HashSet::new())
     }
@@ -72,9 +78,104 @@ impl SmallMap {
     }
 }
 
+#[derive(Clone)]
+struct Range<T> {
+    start: i64,
+    contents: T
+}
+
+struct LargeMap(Vec<Range<Vec<Range<Vec<Range<bool>>>>>>);
+
+impl LargeMap {
+    fn split_at<T: Default + Clone>(val: i64, ranges: &mut Vec<Range<T>>) -> usize {
+        if let Some(index) = Self::find_range_index(val, ranges) {
+            if ranges[index as usize].start != val {
+                ranges.insert(index+1, Range { start: val, contents: ranges[index].contents.clone() });
+                index + 1
+            } else {
+                index
+            }
+        } else  {
+            ranges.insert(0, Range{ start: val, contents: Default::default() });
+            0
+        }
+    }
+
+    fn find_range_index<T>(val: i64, ranges: &[Range<T>]) -> Option<usize> {
+        if ranges.is_empty() || val < ranges[0].start {
+            None
+        } else {
+            Some(ranges.iter().enumerate().find_map(|(index, range)| if range.start > val { Some(index - 1) } else { None }).unwrap_or_else(|| ranges.len() - 1))
+        }
+    }
+
+    fn get_sections<T>(ranges: &[Range<T>]) -> impl Iterator<Item=(&T, i64)> {
+        ranges.iter().tuple_windows().map(|(range, next_range)| (&range.contents, next_range.start - range.start))
+    }
+}
+
+impl CubeMap for LargeMap {
+    fn new() -> Self {
+        LargeMap(vec![])
+    }
+
+    fn apply(&mut self, instruction: &Instruction) {
+
+        let x_ranges = &mut self.0;
+
+        let x_start_index = Self::split_at(instruction.region.min[0], x_ranges);
+        let x_end_index = Self::split_at(instruction.region.max[0] + 1, x_ranges);
+
+        for x_index in x_start_index..x_end_index {
+            let y_ranges = &mut x_ranges[x_index].contents;
+
+            let y_start_index = Self::split_at(instruction.region.min[1], y_ranges);
+            let y_end_index = Self::split_at(instruction.region.max[1] + 1, y_ranges);
+
+            for y_index in y_start_index..y_end_index {
+                let z_ranges = &mut y_ranges[y_index].contents;
+
+                let z_start_index = Self::split_at(instruction.region.min[2], z_ranges);
+                let z_end_index = Self::split_at(instruction.region.max[2] + 1, z_ranges);
+
+                for z_index in z_start_index..z_end_index {
+                    z_ranges[z_index].contents = instruction.on;
+                }
+            }
+        }
+    }
+
+    fn num_cubes_on(&self) -> usize {
+        let mut total =0;
+
+        let x_ranges = &self.0;
+        for (y_ranges, x_width) in Self::get_sections(x_ranges) {
+            for (z_ranges, y_width) in Self::get_sections(y_ranges) {
+                for (on, z_width) in Self::get_sections(z_ranges) {
+                    if *on {
+                        total += (x_width * y_width * z_width) as usize;
+                    }
+                }
+            }
+        }
+
+        total
+    }
+}
+
 fn parse_instructions<P: AsRef<Path>>(input: P) -> Box<[Instruction]> {
     let data = std::fs::read_to_string(input).unwrap();
     parsing::instructions(&data).unwrap().1
+}
+
+fn run<M: CubeMap>(instructions: &[Instruction]) {
+    let mut cube_map = M::new();
+    for instruction in instructions.iter() {
+        cube_map.apply(instruction)
+    }
+
+    println!("{}", cube_map.num_cubes_on());
+
 }
 
 fn main() {
@@ -82,12 +183,8 @@ fn main() {
 
     let instructions = parse_instructions(opt.input);
 
-    let mut small_map = SmallMap::new();
-    for instruction in instructions.iter() {
-        small_map.apply(instruction)
-    }
-
-    println!("{}", small_map.num_cubes_on());
+    run::<SmallMap>(&instructions);
+    run::<LargeMap>(&instructions);
 }
 
 mod parsing {
