@@ -43,6 +43,15 @@ impl Instruction {
             region: self.region.intersect(region),
         }
     }
+
+    fn apply(&self, cube_map: &mut CubeMap<bool>) {
+        cube_map.update(
+            self.region.min.as_slice(),
+            self.region.max.as_slice(),
+            self.on,
+        );
+    }
+
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -133,17 +142,21 @@ impl<T: Default + Clone + Eq> Partition<T> {
 }
 
 trait Update {
-    fn update(&mut self, min: &[i64], max: &[i64], value: bool);
+    type Contents;
+    fn update(&mut self, min: &[i64], max: &[i64], value: &Self::Contents);
 }
 
 impl Update for bool {
-    fn update(&mut self, _min: &[i64], _max: &[i64], value: bool) {
-        *self = value;
+    type Contents = bool;
+    fn update(&mut self, _min: &[i64], _max: &[i64], value: &Self::Contents) {
+        *self = *value;
     }
 }
 
 impl<T: Update + Clone + Default + Eq> Update for Partition<T> {
-    fn update(&mut self, min: &[i64], max: &[i64], value: bool) {
+    type Contents = T::Contents;
+
+    fn update(&mut self, min: &[i64], max: &[i64], value: &Self::Contents) {
         let start_index = self.split_at(min[0]);
         let end_index = self.split_at(max[0] + 1);
 
@@ -180,29 +193,25 @@ impl<T: GetRegions + Default + Clone + Eq> GetRegions for Partition<T> {
     }
 }
 
-struct CubeMap(Partition<Partition<Partition<bool>>>);
+struct CubeMap<T>(Partition<Partition<Partition<T>>>);
 
-impl CubeMap {
+impl<T: Default + Clone + Eq + GetRegions<Contents = T> + Update<Contents = T>> CubeMap<T> {
     fn new() -> Self {
         CubeMap(Partition::new())
     }
 
-    fn apply(&mut self, instruction: &Instruction) {
-        self.0.update(
-            instruction.region.min.as_slice(),
-            instruction.region.max.as_slice(),
-            instruction.on,
-        );
+    fn update(&mut self, min: &[i64], max: &[i64], contents: T) {
+        self.0.update(min, max, &contents);
     }
 
-    fn regions_on(&self) -> impl Iterator<Item = i64> + '_ {
+    fn regions_with_value(&self, value: T) -> impl Iterator<Item = i64> + '_ {
         self.0
             .regions()
-            .filter_map(|(volume, on)| if on { Some(volume) } else { None })
+            .filter_map(move |(volume, contents)| if contents == value { Some(volume) } else { None })
     }
 
-    fn num_cubes_on(&self) -> i64 {
-        self.regions_on().sum()
+    fn num_cube_with_value(&self, value: T) -> i64 {
+        self.regions_with_value(value).sum()
     }
 }
 
@@ -215,13 +224,13 @@ fn run(instructions: &[Instruction], region: Option<Region>) {
     let mut cube_map = CubeMap::new();
     for instruction in instructions.iter() {
         if let Some(region) = &region {
-            cube_map.apply(&instruction.restrict(region));
+            instruction.restrict(region).apply(&mut cube_map);
         } else {
-            cube_map.apply(instruction);
+            instruction.apply(&mut cube_map);
         }
     }
 
-    println!("{}", cube_map.num_cubes_on());
+    println!("{}", cube_map.num_cube_with_value(true));
 }
 
 fn main() {
