@@ -125,22 +125,22 @@ impl<T: Default + Clone + Eq> Partition<T> {
 }
 
 trait Update {
-    fn update(&mut self, region: &Region, depth: usize, value: bool);
+    fn update(&mut self, min: &[i64], max: &[i64], value: bool);
 }
 
 impl Update for bool {
-    fn update(&mut self, _region: &Region, _depth: usize, value: bool) {
+    fn update(&mut self, _min: &[i64], _max: &[i64], value: bool) {
         *self = value;
     }
 }
 
 impl<T: Update + Clone + Default + Eq> Update for Partition<T> {
-    fn update(&mut self, region: &Region, depth: usize, value: bool) {
-        let start_index = self.split_at(region.min[depth]);
-        let end_index = self.split_at(region.max[depth] + 1);
+    fn update(&mut self, min: &[i64], max: &[i64], value: bool) {
+        let start_index = self.split_at(min[0]);
+        let end_index = self.split_at(max[0] + 1);
 
         for range in self.0.iter_mut().take(end_index).skip(start_index) {
-            range.contents.update(region, depth + 1, value);
+            range.contents.update(&min[1..], &max[1..], value);
         }
 
         self.normalize();
@@ -155,7 +155,11 @@ impl CubeMap {
     }
 
     fn apply(&mut self, instruction: &Instruction) {
-        self.0.update(&instruction.region, 0, instruction.on);
+        self.0.update(
+            instruction.region.min.as_slice(),
+            instruction.region.max.as_slice(),
+            instruction.on,
+        );
     }
 
     fn num_cubes_on(&self) -> usize {
