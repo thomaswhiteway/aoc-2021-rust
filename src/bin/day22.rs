@@ -156,17 +156,22 @@ impl<T: Update + Clone + Default + Eq> Update for Partition<T> {
 }
 
 trait GetRegions {
-    fn regions(&self) -> Box<dyn Iterator<Item = (i64, bool)> + '_>;
+    type Contents;
+    fn regions(&self) -> Box<dyn Iterator<Item = (i64, Self::Contents)> + '_>;
 }
 
 impl GetRegions for bool {
-    fn regions(&self) -> Box<dyn Iterator<Item = (i64, bool)> + '_> {
+    type Contents = bool;
+
+    fn regions(&self) -> Box<dyn Iterator<Item = (i64, Self::Contents)> + '_> {
         Box::new([(1, *self)].into_iter())
     }
 }
 
 impl<T: GetRegions + Default + Clone + Eq> GetRegions for Partition<T> {
-    fn regions(&self) -> Box<dyn Iterator<Item = (i64, bool)> + '_> {
+    type Contents = T::Contents;
+
+    fn regions(&self) -> Box<dyn Iterator<Item = (i64, Self::Contents)> + '_> {
         Box::new(self.sections().flat_map(|(subrange, width)| {
             subrange
                 .regions()
