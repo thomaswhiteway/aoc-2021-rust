@@ -175,7 +175,7 @@ impl<T: GetRegions + Default + Clone + Eq> GetRegions for Partition<T> {
         Box::new(self.sections().flat_map(|(subrange, width)| {
             subrange
                 .regions()
-                .map(move |(volume, on)| (volume * width, on))
+                .map(move |(volume, contents)| (volume * width, contents))
         }))
     }
 }
