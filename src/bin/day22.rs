@@ -45,24 +45,48 @@ impl Instruction {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct Range<T> {
     start: i64,
     contents: T,
 }
 
-#[allow(clippy::type_complexity)]
-struct CubeMap(Vec<Range<Vec<Range<Vec<Range<bool>>>>>>);
+#[derive(Default, Clone, PartialEq, Eq)]
+struct Partition<T>(Vec<Range<T>>);
 
-impl CubeMap {
-    fn split_at<T: Default + Clone>(val: i64, ranges: &mut Vec<Range<T>>) -> usize {
-        if let Some(index) = Self::find_range_index(val, ranges) {
-            if ranges[index as usize].start != val {
-                ranges.insert(
+impl<T: Default + Clone + Eq> Partition<T> {
+    fn new() -> Self {
+        Partition(Vec::new())
+    }
+
+    fn find_range_index(&self, val: i64) -> Option<usize> {
+        if self.0.is_empty() || val < self.0[0].start {
+            None
+        } else {
+            Some(
+                self.0
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, range)| {
+                        if range.start > val {
+                            Some(index - 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| self.0.len() - 1),
+            )
+        }
+    }
+
+    fn split_at(&mut self, val: i64) -> usize {
+        if let Some(index) = self.find_range_index(val) {
+            if self.0[index as usize].start != val {
+                self.0.insert(
                     index + 1,
                     Range {
                         start: val,
-                        contents: ranges[index].contents.clone(),
+                        contents: self.0[index].contents.clone(),
                     },
                 );
                 index + 1
@@ -70,7 +94,7 @@ impl CubeMap {
                 index
             }
         } else {
-            ranges.insert(
+            self.0.insert(
                 0,
                 Range {
                     start: val,
@@ -81,69 +105,66 @@ impl CubeMap {
         }
     }
 
-    fn find_range_index<T>(val: i64, ranges: &[Range<T>]) -> Option<usize> {
-        if ranges.is_empty() || val < ranges[0].start {
-            None
-        } else {
-            Some(
-                ranges
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, range)| {
-                        if range.start > val {
-                            Some(index - 1)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| ranges.len() - 1),
-            )
+    fn normalize(&mut self) {
+        let mut index = 0;
+        while index < self.0.len() - 1 {
+            if self.0[index].contents == self.0[index + 1].contents {
+                self.0.remove(index + 1);
+            }
+
+            index += 1;
         }
     }
 
-    fn get_sections<T>(ranges: &[Range<T>]) -> impl Iterator<Item = (&T, i64)> {
-        ranges
+    fn sections(&self) -> impl Iterator<Item = (&T, i64)> {
+        self.0
             .iter()
             .tuple_windows()
             .map(|(range, next_range)| (&range.contents, next_range.start - range.start))
     }
+}
 
+trait Update {
+    fn update(&mut self, region: &Region, depth: usize, value: bool);
+}
+
+impl Update for bool {
+    fn update(&mut self, _region: &Region, _depth: usize, value: bool) {
+        *self = value;
+    }
+}
+
+impl<T: Update + Clone + Default + Eq> Update for Partition<T> {
+    fn update(&mut self, region: &Region, depth: usize, value: bool) {
+        let start_index = self.split_at(region.min[depth]);
+        let end_index = self.split_at(region.max[depth] + 1);
+
+        for range in self.0.iter_mut().take(end_index).skip(start_index) {
+            range.contents.update(region, depth + 1, value);
+        }
+
+        self.normalize();
+    }
+}
+
+struct CubeMap(Partition<Partition<Partition<bool>>>);
+
+impl CubeMap {
     fn new() -> Self {
-        CubeMap(vec![])
+        CubeMap(Partition::new())
     }
 
     fn apply(&mut self, instruction: &Instruction) {
-        let x_ranges = &mut self.0;
-
-        let x_start_index = Self::split_at(instruction.region.min[0], x_ranges);
-        let x_end_index = Self::split_at(instruction.region.max[0] + 1, x_ranges);
-
-        for x_range in x_ranges.iter_mut().take(x_end_index).skip(x_start_index) {
-            let y_ranges = &mut x_range.contents;
-
-            let y_start_index = Self::split_at(instruction.region.min[1], y_ranges);
-            let y_end_index = Self::split_at(instruction.region.max[1] + 1, y_ranges);
-
-            for y_range in y_ranges.iter_mut().take(y_end_index).skip(y_start_index) {
-                let z_ranges = &mut y_range.contents;
-
-                let z_start_index = Self::split_at(instruction.region.min[2], z_ranges);
-                let z_end_index = Self::split_at(instruction.region.max[2] + 1, z_ranges);
-
-                for z_range in z_ranges.iter_mut().take(z_end_index).skip(z_start_index) {
-                    z_range.contents = instruction.on;
-                }
-            }
-        }
+        self.0.update(&instruction.region, 0, instruction.on);
     }
 
     fn num_cubes_on(&self) -> usize {
         let mut total = 0;
 
         let x_ranges = &self.0;
-        for (y_ranges, x_width) in Self::get_sections(x_ranges) {
-            for (z_ranges, y_width) in Self::get_sections(y_ranges) {
-                for (on, z_width) in Self::get_sections(z_ranges) {
+        for (y_ranges, x_width) in x_ranges.sections() {
+            for (z_ranges, y_width) in y_ranges.sections() {
+                for (on, z_width) in z_ranges.sections() {
                     if *on {
                         total += (x_width * y_width * z_width) as usize;
                     }
