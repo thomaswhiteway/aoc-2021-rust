@@ -1,8 +1,7 @@
 use itertools::Itertools;
-use structopt::StructOpt;
-use nalgebra::{Vector3, vector};
+use nalgebra::{vector, Vector3};
 use std::path::{Path, PathBuf};
-use std::collections::HashSet;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -10,7 +9,7 @@ struct Opt {
     input: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Region {
     min: Vector3<i64>,
     max: Vector3<i64>,
@@ -30,73 +29,54 @@ impl Region {
         ];
         Region { min, max }
     }
-
-    fn all_points(&self) -> impl Iterator<Item=Vector3<i64>> {
-        (0..3).map(|axis| self.min[axis]..=self.max[axis])
-            .multi_cartesian_product()
-            .map(Vector3::from_vec)
-    }
 }
-
-trait CubeMap {
-    fn new() -> Self;
-    fn apply(&mut self, instruction: &Instruction);
-    fn num_cubes_on(&self) -> usize;
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Instruction {
     on: bool,
     region: Region,
 }
 
-
-struct SmallMap(HashSet<Vector3<i64>>);
-
-impl CubeMap for SmallMap {
-    fn new() -> Self {
-        SmallMap(HashSet::new())
-    }
-
-    fn apply(&mut self, instruction: &Instruction) {
-        let considered_region = Region {
-            min: vector![-50, -50, -50],
-            max: vector![50, 50, 50]
-        };
-        let range = instruction.region.intersect(&considered_region);
-        for pos in range.all_points() {
-            if instruction.on {
-                self.0.insert(pos);
-            } else {
-                self.0.remove(&pos);
-            }
+impl Instruction {
+    fn restrict(&self, region: &Region) -> Self {
+        Instruction {
+            on: self.on,
+            region: self.region.intersect(region),
         }
-    }
-
-    fn num_cubes_on(&self) -> usize {
-        self.0.len()
     }
 }
 
 #[derive(Clone)]
 struct Range<T> {
     start: i64,
-    contents: T
+    contents: T,
 }
 
-struct LargeMap(Vec<Range<Vec<Range<Vec<Range<bool>>>>>>);
+#[allow(clippy::type_complexity)]
+struct CubeMap(Vec<Range<Vec<Range<Vec<Range<bool>>>>>>);
 
-impl LargeMap {
+impl CubeMap {
     fn split_at<T: Default + Clone>(val: i64, ranges: &mut Vec<Range<T>>) -> usize {
         if let Some(index) = Self::find_range_index(val, ranges) {
             if ranges[index as usize].start != val {
-                ranges.insert(index+1, Range { start: val, contents: ranges[index].contents.clone() });
+                ranges.insert(
+                    index + 1,
+                    Range {
+                        start: val,
+                        contents: ranges[index].contents.clone(),
+                    },
+                );
                 index + 1
             } else {
                 index
             }
-        } else  {
-            ranges.insert(0, Range{ start: val, contents: Default::default() });
+        } else {
+            ranges.insert(
+                0,
+                Range {
+                    start: val,
+                    contents: Default::default(),
+                },
+            );
             0
         }
     }
@@ -105,48 +85,60 @@ impl LargeMap {
         if ranges.is_empty() || val < ranges[0].start {
             None
         } else {
-            Some(ranges.iter().enumerate().find_map(|(index, range)| if range.start > val { Some(index - 1) } else { None }).unwrap_or_else(|| ranges.len() - 1))
+            Some(
+                ranges
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, range)| {
+                        if range.start > val {
+                            Some(index - 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| ranges.len() - 1),
+            )
         }
     }
 
-    fn get_sections<T>(ranges: &[Range<T>]) -> impl Iterator<Item=(&T, i64)> {
-        ranges.iter().tuple_windows().map(|(range, next_range)| (&range.contents, next_range.start - range.start))
+    fn get_sections<T>(ranges: &[Range<T>]) -> impl Iterator<Item = (&T, i64)> {
+        ranges
+            .iter()
+            .tuple_windows()
+            .map(|(range, next_range)| (&range.contents, next_range.start - range.start))
     }
-}
 
-impl CubeMap for LargeMap {
     fn new() -> Self {
-        LargeMap(vec![])
+        CubeMap(vec![])
     }
 
     fn apply(&mut self, instruction: &Instruction) {
-
         let x_ranges = &mut self.0;
 
         let x_start_index = Self::split_at(instruction.region.min[0], x_ranges);
         let x_end_index = Self::split_at(instruction.region.max[0] + 1, x_ranges);
 
-        for x_index in x_start_index..x_end_index {
-            let y_ranges = &mut x_ranges[x_index].contents;
+        for x_range in x_ranges.iter_mut().take(x_end_index).skip(x_start_index) {
+            let y_ranges = &mut x_range.contents;
 
             let y_start_index = Self::split_at(instruction.region.min[1], y_ranges);
             let y_end_index = Self::split_at(instruction.region.max[1] + 1, y_ranges);
 
-            for y_index in y_start_index..y_end_index {
-                let z_ranges = &mut y_ranges[y_index].contents;
+            for y_range in y_ranges.iter_mut().take(y_end_index).skip(y_start_index) {
+                let z_ranges = &mut y_range.contents;
 
                 let z_start_index = Self::split_at(instruction.region.min[2], z_ranges);
                 let z_end_index = Self::split_at(instruction.region.max[2] + 1, z_ranges);
 
-                for z_index in z_start_index..z_end_index {
-                    z_ranges[z_index].contents = instruction.on;
+                for z_range in z_ranges.iter_mut().take(z_end_index).skip(z_start_index) {
+                    z_range.contents = instruction.on;
                 }
             }
         }
     }
 
     fn num_cubes_on(&self) -> usize {
-        let mut total =0;
+        let mut total = 0;
 
         let x_ranges = &self.0;
         for (y_ranges, x_width) in Self::get_sections(x_ranges) {
@@ -168,14 +160,17 @@ fn parse_instructions<P: AsRef<Path>>(input: P) -> Box<[Instruction]> {
     parsing::instructions(&data).unwrap().1
 }
 
-fn run<M: CubeMap>(instructions: &[Instruction]) {
-    let mut cube_map = M::new();
+fn run(instructions: &[Instruction], region: Option<Region>) {
+    let mut cube_map = CubeMap::new();
     for instruction in instructions.iter() {
-        cube_map.apply(instruction)
+        if let Some(region) = &region {
+            cube_map.apply(&instruction.restrict(region));
+        } else {
+            cube_map.apply(instruction);
+        }
     }
 
     println!("{}", cube_map.num_cubes_on());
-
 }
 
 fn main() {
@@ -183,14 +178,21 @@ fn main() {
 
     let instructions = parse_instructions(opt.input);
 
-    run::<SmallMap>(&instructions);
-    run::<LargeMap>(&instructions);
+    run(
+        &instructions,
+        Some(Region {
+            min: vector![-50, -50, -50],
+            max: vector![50, 50, 50],
+        }),
+    );
+    run(&instructions, None);
 }
 
 mod parsing {
     use super::*;
 
     use nalgebra::vector;
+    use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::character::complete::one_of;
     use nom::combinator::{map, map_res, recognize};
@@ -198,7 +200,6 @@ mod parsing {
     use nom::sequence::separated_pair;
     use nom::IResult;
     use std::str::FromStr;
-    use nom::branch::alt;
 
     fn number(input: &str) -> IResult<&str, i64> {
         map_res(recognize(many1(one_of("-0123456789"))), i64::from_str)(input)
@@ -209,10 +210,7 @@ mod parsing {
     }
 
     fn command(input: &str) -> IResult<&str, bool> {
-        alt((
-            map(tag("on"), |_| true),
-            map(tag("off"), |_| false),
-        ))(input)
+        alt((map(tag("on"), |_| true), map(tag("off"), |_| false)))(input)
     }
 
     fn instruction(input: &str) -> IResult<&str, Instruction> {
@@ -223,17 +221,22 @@ mod parsing {
         let (input, y_range) = range(input)?;
         let (input, _) = tag(",z=")(input)?;
         let (input, z_range) = range(input)?;
-        Ok((input, Instruction {
-            on,
-            region: Region {
-                min: vector![x_range.0, y_range.0, z_range.0],
-                max: vector![x_range.1, y_range.1, z_range.1],
-
-            }
-        }))
+        Ok((
+            input,
+            Instruction {
+                on,
+                region: Region {
+                    min: vector![x_range.0, y_range.0, z_range.0],
+                    max: vector![x_range.1, y_range.1, z_range.1],
+                },
+            },
+        ))
     }
 
     pub(super) fn instructions(input: &str) -> IResult<&str, Box<[Instruction]>> {
-        map(separated_list1(tag("\n"), instruction), Vec::into_boxed_slice)(input)
+        map(
+            separated_list1(tag("\n"), instruction),
+            Vec::into_boxed_slice,
+        )(input)
     }
 }
