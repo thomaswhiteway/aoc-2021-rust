@@ -68,6 +68,98 @@ impl TryFrom<char> for Amphipod {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Location {
+    Room { room: usize, depth: usize },
+    Corridor { spot: usize },
+}
+
+impl From<Location> for Position {
+    fn from(location: Location) -> Self {
+        use Location::*;
+
+        match location {
+            Room { room, depth } => Position {
+                x: 2 + 2 * room,
+                y: depth + 1,
+            },
+            Corridor { spot } => {
+                if spot == 0 {
+                    Position { x: 0, y: 0 }
+                } else if spot < 6 {
+                    Position {
+                        x: 2 * spot - 1,
+                        y: 0,
+                    }
+                } else {
+                    Position { x: 10, y: 0 }
+                }
+            }
+        }
+    }
+}
+
+impl Location {
+    fn distance_to(&self, other: Location) -> usize {
+        Position::from(*self).distance_to(other.into())
+    }
+
+    fn room(&self) -> Option<usize> {
+        use Location::*;
+        match self {
+            Room { room, .. } => Some(*room),
+            Corridor { .. } => None,
+        }
+    }
+
+    fn same_room(&self, other: Location) -> bool {
+        self.room()
+            .zip(other.room())
+            .map(|(room, other_room)| room == other_room)
+            .unwrap_or(false)
+    }
+}
+
+impl TryFrom<Position> for Location {
+    type Error = ();
+
+    fn try_from(position: Position) -> Result<Self, Self::Error> {
+        use Location::*;
+        if position.y == 0 {
+            if position.x == 0 {
+                Ok(Corridor { spot: 0 })
+            } else if position.x < 10 {
+                if position.x % 2 == 1 {
+                    Ok(Corridor {
+                        spot: (position.x + 1) / 2,
+                    })
+                } else {
+                    Err(())
+                }
+            } else {
+                Ok(Corridor { spot: 6 })
+            }
+        } else {
+            Ok(Room {
+                room: position.x / 2 - 1,
+                depth: position.y - 1,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Position {
+    x: usize,
+    y: usize,
+}
+
+impl Position {
+    fn distance_to(&self, other: Position) -> usize {
+        abs_diff(self.x, other.x) + self.y + other.y
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct Layout {
     room_depth: usize,
@@ -132,55 +224,6 @@ impl Layout {
         })
     }
 
-    fn spot_position(spot: usize) -> usize {
-        if spot == 0 {
-            0
-        } else if spot < 6 {
-            2 * spot - 1
-        } else {
-            10
-        }
-    }
-
-    fn room_entrance_position(room: usize) -> usize {
-        2 * room + 2
-    }
-
-    fn distance_to_room(&self, spot: usize, room: usize) -> usize {
-        abs_diff(
-            Self::spot_position(spot),
-            Self::room_entrance_position(room),
-        ) + self.room_depth
-            - self.rooms[room].len()
-    }
-
-    fn distance_between_rooms(&self, room1: usize, room2: usize) -> usize {
-        if room1 != room2 {
-            abs_diff(
-                Self::room_entrance_position(room1),
-                Self::room_entrance_position(room2),
-            ) + 2 * self.room_depth
-                + 1
-                - self.rooms[room1].len()
-                - self.rooms[room2].len()
-        } else {
-            0
-        }
-    }
-
-    fn distance_from_room(&self, room: usize, spot: usize) -> usize {
-        abs_diff(
-            Self::spot_position(spot),
-            Self::room_entrance_position(room),
-        ) + self.room_depth
-            + 1
-            - self.rooms[room].len()
-    }
-
-    fn distance_between_spots(&self, spot1: usize, spot2: usize) -> usize {
-        abs_diff(Self::spot_position(spot1), Self::spot_position(spot2))
-    }
-
     fn get_spot(position: usize) -> Option<usize> {
         if position == 0 {
             Some(0)
@@ -209,84 +252,152 @@ impl Layout {
         }
     }
 
-    fn spots_between(source: usize, dest: usize) -> impl Iterator<Item = usize> {
-        let positions = if source < dest {
-            source + 1..=dest
+    fn locations_between<A: Into<Position>, B: Into<Position>>(
+        from: A,
+        to: B,
+    ) -> impl Iterator<Item = Location> {
+        let from: Position = from.into();
+        let to: Position = to.into();
+
+        let xs = if from.x < to.x {
+            from.x + 1..=to.x
         } else {
-            dest..=source - 1
+            to.x..=from.x - 1
         };
-        positions.filter_map(Self::get_spot)
+
+        (0..from.y)
+            .rev()
+            .map(move |y| Position { x: from.x, y })
+            .chain(xs.map(|x| Position { x, y: 0 }))
+            .chain((1..=to.y).map(move |y| Position { x: to.x, y }))
+            .filter_map(|pos| pos.try_into().ok())
     }
 
-    fn is_clear(&self, from: usize, to: usize) -> bool {
-        Self::spots_between(from, to).all(|spot| self.corridor[spot].is_none())
+    fn location_clear(&self, location: Location) -> bool {
+        use Location::*;
+        match location {
+            Room { room, depth } => self.rooms[room].len() < self.room_depth - depth,
+            Corridor { spot } => self.corridor[spot].is_none(),
+        }
     }
 
-    fn can_move_from_corridor_to_room(&self, spot: usize, room: usize) -> bool {
-        self.is_clear(
-            Self::spot_position(spot),
-            Self::room_entrance_position(room),
-        ) && self.rooms[room].len() < self.room_depth
-            && self.rooms[room]
-                .iter()
-                .all(|amphipod| amphipod.room() == room)
+    fn is_clear(&self, from: Location, to: Location) -> bool {
+        Self::locations_between(from, to).all(|spot| self.location_clear(spot))
     }
 
-    fn can_move_from_room_to_corridor(&self, room: usize, spot: usize) -> bool {
-        self.is_clear(
-            Self::room_entrance_position(room),
-            Self::spot_position(spot),
-        )
+    fn available_room_location(&self, room: usize) -> Option<Location> {
+        if self.rooms[room].len() < self.room_depth {
+            Some(Location::Room {
+                room,
+                depth: self.room_depth - self.rooms[room].len() - 1,
+            })
+        } else {
+            None
+        }
     }
 
-    fn can_move_in_corridor(&self, spot1: usize, spot2: usize) -> bool {
-        self.is_clear(Self::spot_position(spot1), Self::spot_position(spot2))
-    }
-
-    fn can_move_between_rooms(&self, from: usize, to: usize) -> bool {
-        from != to
-            && self.is_clear(
-                Self::room_entrance_position(from),
-                Self::room_entrance_position(to),
-            )
-            && self.rooms[to].len() < self.room_depth
-            && self.rooms[to].iter().all(|amphipod| amphipod.room() == to)
-    }
-
-    fn amphipods_in_corridor(&self) -> impl Iterator<Item = (usize, Amphipod)> + '_ {
-        self.corridor
-            .iter()
-            .enumerate()
-            .filter_map(|(spot, contents)| contents.map(|x| (spot, x)))
-    }
-
-    fn amphipods_in_rooms(&self) -> impl Iterator<Item = (usize, usize, usize, Amphipod)> + '_ {
-        self.rooms.iter().enumerate().flat_map(|(room, contents)| {
-            contents
-                .iter()
-                .enumerate()
-                .map(move |(height, amphipod)| (room, height, contents.len(), *amphipod))
+    fn can_move_to_room(&self, location: Location, room: usize) -> Option<Location> {
+        self.available_room_location(room).filter(|&room_location| {
+            //self.can_move(location) &&
+            !location.same_room(room_location)
+                && self.is_clear(location, room_location)
+                && self.rooms[room]
+                    .iter()
+                    .all(|amphipod| amphipod.room() == room)
         })
     }
 
-    fn min_energy_to_solve(&self) -> usize {
+    fn can_move_to_corridor(&self, location: Location, spot: usize) -> Option<Location> {
+        let corridor_location = Location::Corridor { spot };
+        if location != corridor_location && self.is_clear(location, corridor_location) {
+            Some(corridor_location)
+        } else {
+            None
+        }
+    }
+
+    fn amphipods(&self) -> impl Iterator<Item = (Location, Amphipod)> + '_ {
         self.amphipods_in_corridor()
-            .map(|(spot, amphipod)| {
-                amphipod.energy_to_move()
-                    * (self
-                        .distance_to_room(spot, amphipod.room())
-                        .saturating_sub((self.room_depth * (self.room_depth - 1)) / 2))
+            .chain(self.amphipods_in_rooms())
+    }
+
+    fn amphipods_in_corridor(&self) -> impl Iterator<Item = (Location, Amphipod)> + '_ {
+        self.corridor
+            .iter()
+            .enumerate()
+            .filter_map(|(spot, contents)| {
+                contents.map(|amphipod| (Location::Corridor { spot }, amphipod))
             })
-            .sum::<usize>()
-            + self
-                .amphipods_in_rooms()
-                .map(|(room, _, _, amphipod)| {
-                    amphipod.energy_to_move()
-                        * (self
-                            .distance_between_rooms(room, amphipod.room())
-                            .saturating_sub((self.room_depth * (self.room_depth - 1)) / 2))
+    }
+
+    fn amphipods_in_rooms(&self) -> impl Iterator<Item = (Location, Amphipod)> + '_ {
+        self.rooms
+            .iter()
+            .enumerate()
+            .flat_map(move |(room, contents)| {
+                contents.iter().enumerate().map(move |(height, amphipod)| {
+                    (
+                        Location::Room {
+                            room,
+                            depth: self.room_depth - height - 1,
+                        },
+                        *amphipod,
+                    )
                 })
-                .sum::<usize>()
+            })
+    }
+
+    fn min_energy_to_solve(&self) -> usize {
+        self.amphipods()
+            .map(|(location, amphipod)| {
+                amphipod.energy_to_move()
+                    * location.distance_to(Location::Room {
+                        room: amphipod.room(),
+                        depth: 0,
+                    })
+            })
+            .sum()
+    }
+
+    fn remove(&mut self, location: Location) -> Option<Amphipod> {
+        use Location::*;
+        match location {
+            Corridor { spot } => self.corridor[spot].take(),
+            Room { room, depth } => {
+                // Can only remove the top amphipod in a room.
+                if self.room_depth - depth == self.rooms[room].len() {
+                    self.rooms[room].pop()
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn add(&mut self, location: Location, amphipod: Amphipod) {
+        use Location::*;
+        match location {
+            Corridor { spot } => {
+                assert!(self.corridor[spot].is_none());
+                self.corridor[spot] = Some(amphipod)
+            }
+            Room { room, depth } => {
+                // Can only add to the top of the amphipods in a room.
+                assert_eq!(self.room_depth - depth, self.rooms[room].len() + 1);
+                self.rooms[room].push(amphipod);
+            }
+        }
+    }
+
+    fn moves_to_corridor(&self, location: Location) -> impl Iterator<Item = Location> + '_ {
+        (0..7).filter_map(move |spot| self.can_move_to_corridor(location, spot))
+    }
+
+    fn do_move(&self, from: Location, to: Location) -> Self {
+        let mut layout = self.clone();
+        let amphipod = layout.remove(from).unwrap();
+        layout.add(to, amphipod);
+        layout
     }
 }
 
@@ -371,88 +482,44 @@ impl Candidate {
         }
     }
 
-    fn move_from_corridor(&self, spot: usize) -> impl Iterator<Item = Candidate> {
-        let mut new_layout = self.layout.clone();
-        let amphipod = new_layout.corridor[spot].take().unwrap();
-
-        let mut candidates = vec![];
-
-        let target_room = amphipod.room();
-        if self
-            .layout
-            .can_move_from_corridor_to_room(spot, target_room)
-        {
-            let mut new_layout = new_layout.clone();
-            new_layout.rooms[target_room].push(amphipod);
-
-            candidates.push(self.successor(
-                new_layout,
-                amphipod.energy_to_move() * self.layout.distance_to_room(spot, target_room),
-            ));
-        }
-
-        for other_spot in 0..7 {
-            if other_spot != spot && self.layout.can_move_in_corridor(spot, other_spot) {
-                let mut new_layout = new_layout.clone();
-                new_layout.corridor[other_spot] = Some(amphipod);
-
-                candidates.push(self.successor(
-                    new_layout,
-                    amphipod.energy_to_move()
-                        * self.layout.distance_between_spots(spot, other_spot),
-                ));
-            }
-        }
-
-        candidates.into_iter()
+    fn moves_to_room(&self) -> impl Iterator<Item = Candidate> + '_ {
+        self.layout.amphipods().filter_map(|(location, amphipod)| {
+            self.layout
+                .can_move_to_room(location, amphipod.room())
+                .map(|new_location| {
+                    self.successor(
+                        self.layout.do_move(location, new_location),
+                        amphipod.energy_to_move() * location.distance_to(new_location),
+                    )
+                })
+        })
     }
 
-    fn move_from_room(&self, room: usize) -> impl Iterator<Item = Candidate> {
-        let mut new_layout = self.layout.clone();
-        let amphipod = new_layout.rooms[room].pop().unwrap();
-
-        let mut candidates = vec![];
-
-        let target_room = amphipod.room();
-        if self.layout.can_move_between_rooms(room, target_room) {
-            let mut new_layout = new_layout.clone();
-            new_layout.rooms[target_room].push(amphipod);
-
-            candidates.push(self.successor(
-                new_layout,
-                amphipod.energy_to_move() * self.layout.distance_between_rooms(room, target_room),
-            ));
-        }
-
-        for spot in 0..7 {
-            if self.layout.can_move_from_room_to_corridor(room, spot) {
-                let mut new_layout = new_layout.clone();
-                new_layout.corridor[spot] = Some(amphipod);
-
-                candidates.push(self.successor(
-                    new_layout,
-                    amphipod.energy_to_move() * self.layout.distance_from_room(room, spot),
-                ));
-            }
-        }
-
-        candidates.into_iter()
+    fn moves_to_corridor(&self) -> impl Iterator<Item = Candidate> + '_ {
+        self.layout
+            .amphipods()
+            .flat_map(move |(location, amphipod)| {
+                self.layout
+                    .moves_to_corridor(location)
+                    .map(move |new_location| {
+                        self.successor(
+                            self.layout.do_move(location, new_location),
+                            amphipod.energy_to_move() * location.distance_to(new_location),
+                        )
+                    })
+            })
     }
 
     fn successors(&self) -> impl Iterator<Item = Candidate> + '_ {
-        self.layout
-            .amphipods_in_corridor()
-            .flat_map(|(spot, _)| self.move_from_corridor(spot))
-            .chain(
-                self.layout
-                    .rooms
-                    .iter()
-                    .enumerate()
-                    .filter(|(room, contents)| {
-                        contents.iter().any(|amphipod| amphipod.room() != *room)
-                    })
-                    .flat_map(|(room, _)| self.move_from_room(room)),
-            )
+        // If an amphipod can move into their final room always do that as
+        // they have to do that at some point, it's never going to get cheaper
+        // to do so, and once they're in the room they can't affect anything
+        // else.
+        if let Some(candidate) = self.moves_to_room().next() {
+            Box::new([candidate].into_iter()) as Box<dyn Iterator<Item = Candidate>>
+        } else {
+            Box::new(self.moves_to_corridor()) as Box<dyn Iterator<Item = Candidate>>
+        }
     }
 
     fn print_history(&self) {
@@ -546,22 +613,5 @@ mod test {
         let candidate = Candidate::new(layout, 0, false);
         let successors = candidate.successors().collect::<Vec<_>>();
         assert_eq!(successors.len(), 28);
-    }
-
-    #[test]
-    fn test_distance_from_room_to_spot() {
-        use Amphipod::*;
-
-        let layout = Layout {
-            corridor: [None, None, None, None, None, Some(Desert), None],
-            room_depth: 2,
-            rooms: [
-                vec![Amber, Bronze],
-                vec![Desert, Copper],
-                vec![Copper, Bronze],
-                vec![Amber],
-            ],
-        };
-        assert_eq!(layout.distance_from_room(3, 1), 9);
     }
 }
