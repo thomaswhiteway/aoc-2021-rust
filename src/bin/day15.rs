@@ -1,6 +1,8 @@
-use std::collections::BinaryHeap;
-use std::collections::{HashMap, HashSet};
+use aoc2021::a_star;
+use derivative::*;
+use std::collections::HashMap;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -117,64 +119,65 @@ fn parse_risk_map<P: AsRef<Path>>(input: P) -> RiskMap {
     RiskMap::new(risks)
 }
 
-#[derive(PartialEq, Eq)]
-struct Candidate {
+#[derive(Derivative)]
+#[derivative(Debug)]
+#[derive(Clone)]
+struct State<'a> {
+    #[derivative(Debug = "ignore")]
+    risks: &'a RiskMap,
     position: Position,
-    total_risk: usize,
-    min_remaining: usize,
+    target: Position,
 }
 
-impl Candidate {
-    fn new(position: Position, target: Position, total_risk: usize) -> Self {
-        Candidate {
+impl<'a> Hash for State<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.position.hash(state);
+        self.target.hash(state);
+    }
+}
+
+impl<'a> PartialEq for State<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.position == other.position && self.target == other.target
+    }
+}
+
+impl<'a> Eq for State<'a> {}
+
+impl<'a> State<'a> {
+    fn new(risks: &'a RiskMap) -> Self {
+        State {
+            risks,
+            position: risks.top_left(),
+            target: risks.bottom_right(),
+        }
+    }
+
+    fn successor(&self, position: Position) -> Self {
+        State {
+            risks: self.risks,
             position,
-            total_risk,
-            min_remaining: position.distance_to(&target) as usize, // Each step involves at least one risk
+            target: self.target,
         }
     }
 }
 
-impl PartialOrd for Candidate {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(
-            (self.total_risk + self.min_remaining)
-                .cmp(&(other.total_risk + other.min_remaining))
-                .reverse(),
+impl<'a> a_star::State for State<'a> {
+    fn min_remaining_cost(&self) -> usize {
+        self.position.distance_to(&self.target) as usize
+    }
+
+    fn is_complete(&self) -> bool {
+        self.position == self.target
+    }
+
+    fn successors(&self) -> Box<dyn Iterator<Item = (Self, usize)> + '_> {
+        Box::new(
+            self.position
+                .adjacent()
+                .filter_map(|pos| self.risks.get(&pos).map(|risk| (self.successor(pos), risk))),
         )
     }
-}
-
-impl Ord for Candidate {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-fn find_lowest_total_risk(risks: &RiskMap, start: Position, end: Position) -> Option<usize> {
-    let mut candidates = BinaryHeap::new();
-    let mut visited = HashSet::new();
-
-    candidates.push(Candidate::new(start, end, 0));
-
-    while let Some(candidate) = candidates.pop() {
-        if candidate.position == end {
-            return Some(candidate.total_risk);
-        }
-
-        if !visited.contains(&candidate.position) {
-            visited.insert(candidate.position);
-
-            for adjacent in candidate.position.adjacent() {
-                if !visited.contains(&adjacent) {
-                    if let Some(risk) = risks.get(&adjacent) {
-                        candidates.push(Candidate::new(adjacent, end, candidate.total_risk + risk))
-                    }
-                }
-            }
-        }
-    }
-
-    None
 }
 
 fn main() {
@@ -182,13 +185,11 @@ fn main() {
 
     let risks = parse_risk_map(opt.input);
 
-    let total_risk =
-        find_lowest_total_risk(&risks, risks.top_left(), risks.bottom_right()).unwrap();
+    let total_risk = a_star::solve(State::new(&risks)).unwrap();
     println!("{}", total_risk);
 
     let risks = risks.with_mult(5);
 
-    let total_risk =
-        find_lowest_total_risk(&risks, risks.top_left(), risks.bottom_right()).unwrap();
+    let total_risk = a_star::solve(State::new(&risks)).unwrap();
     println!("{}", total_risk);
 }

@@ -447,21 +447,9 @@ impl Display for Layout {
     }
 }
 
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct AmphipodState {
     layout: Layout,
-}
-
-impl PartialEq for AmphipodState {
-    fn eq(&self, other: &Self) -> bool {
-        self.layout == other.layout
-    }
-}
-
-impl Hash for AmphipodState {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.layout.hash(state)
-    }
 }
 
 impl AmphipodState {
