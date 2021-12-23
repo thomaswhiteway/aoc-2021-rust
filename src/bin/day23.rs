@@ -1,6 +1,7 @@
 use std::collections::{BinaryHeap, HashSet};
 use std::fmt::Display;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -446,130 +447,141 @@ impl Display for Layout {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
-struct Candidate {
+#[derive(Clone, Debug, Eq)]
+struct AmphipodState {
     layout: Layout,
-    energy: usize,
-    min_energy_remaining: usize,
-    history: Option<Vec<(Layout, usize)>>,
-    last_move: Option<Location>,
 }
 
-impl Candidate {
-    fn new(layout: Layout, energy: usize, track_history: bool) -> Self {
-        let min_energy_remaining = layout.min_energy_to_solve();
-        Candidate {
-            layout,
-            energy,
-            min_energy_remaining,
-            history: if track_history { Some(vec![]) } else { None },
-            last_move: None,
-        }
+impl PartialEq for AmphipodState {
+    fn eq(&self, other: &Self) -> bool {
+        self.layout == other.layout
+    }
+}
+
+impl Hash for AmphipodState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.layout.hash(state)
+    }
+}
+
+impl AmphipodState {
+    fn new(layout: Layout) -> Self {
+        AmphipodState { layout }
     }
 
-    fn successor(&self, amphipod: Amphipod, from: Location, to: Location) -> Self {
+    fn successor(&self, amphipod: Amphipod, from: Location, to: Location) -> (Self, usize) {
         let layout = self.layout.do_move(from, to);
         let new_energy = amphipod.energy_to_move() * from.distance_to(to);
-        let min_energy_remaining = layout.min_energy_to_solve();
 
-        let history = self.history.as_ref().map(|history| {
-            let mut history = history.clone();
-            history.push((self.layout.clone(), new_energy));
-            history
-        });
-
-        Candidate {
-            layout,
-            energy: self.energy + new_energy,
-            min_energy_remaining,
-            history,
-            last_move: Some(to),
-        }
+        (AmphipodState { layout }, new_energy)
     }
 
-    fn moves_to_room(&self) -> impl Iterator<Item = Candidate> + '_ {
+    fn moves_to_room(&self) -> impl Iterator<Item = (AmphipodState, usize)> + '_ {
         self.layout.amphipods().filter_map(|(location, amphipod)| {
             self.layout
                 .can_move_to_room(location, amphipod.room())
-                .map(|new_location|
-                    self.successor(amphipod, location, new_location)
-                )
+                .map(|new_location| self.successor(amphipod, location, new_location))
         })
     }
 
-    fn moves_to_corridor(&self) -> impl Iterator<Item = Candidate> + '_ {
+    fn moves_to_corridor(&self) -> impl Iterator<Item = (AmphipodState, usize)> + '_ {
         self.layout
             .amphipods()
-            .filter(|(location, _)| self.last_move != Some(*location))
             .flat_map(move |(location, amphipod)| {
                 self.layout
                     .moves_to_corridor(location)
-                    .map(move |new_location|
-                        self.successor(amphipod, location, new_location)
-                    )
+                    .map(move |new_location| self.successor(amphipod, location, new_location))
             })
     }
+}
 
-    fn successors(&self) -> impl Iterator<Item = Candidate> + '_ {
+impl State for AmphipodState {
+    fn min_remaining_cost(&self) -> usize {
+        self.layout.min_energy_to_solve()
+    }
+
+    fn successors(&self) -> Box<dyn Iterator<Item = (Self, usize)> + '_> {
         // If an amphipod can move into their final room always do that as
         // they have to do that at some point, it's never going to get cheaper
         // to do so, and once they're in the room they can't affect anything
         // else.
         if let Some(candidate) = self.moves_to_room().next() {
-            Box::new([candidate].into_iter()) as Box<dyn Iterator<Item = Candidate>>
+            Box::new([candidate].into_iter()) as Box<dyn Iterator<Item = (AmphipodState, usize)>>
         } else {
-            Box::new(self.moves_to_corridor()) as Box<dyn Iterator<Item = Candidate>>
+            Box::new(self.moves_to_corridor()) as Box<dyn Iterator<Item = (AmphipodState, usize)>>
         }
     }
 
-    fn print_history(&self) {
-        if let Some(ref history) = self.history {
-            for (layout, energy) in history.iter() {
-                println!("{}", layout);
-                println!("Energy: {}", energy);
-                println!();
-            }
-            println!("{}", self.layout);
-        }
+    fn is_complete(&self) -> bool {
+        self.layout.is_complete()
     }
 }
 
-impl PartialOrd for Candidate {
+#[derive(PartialEq, Eq, Debug)]
+struct Candidate<S> {
+    state: S,
+    cost: usize,
+    min_remaining_cost: usize,
+}
+
+trait State: Sized {
+    fn min_remaining_cost(&self) -> usize;
+    fn successors(&self) -> Box<dyn Iterator<Item = (Self, usize)> + '_>;
+    fn is_complete(&self) -> bool;
+}
+
+impl<S: State> Candidate<S> {
+    fn new(state: S, cost: usize) -> Self {
+        let min_remaining_cost = state.min_remaining_cost();
+        Candidate {
+            state,
+            cost,
+            min_remaining_cost,
+        }
+    }
+
+    fn successors(&self) -> impl Iterator<Item = Candidate<S>> + '_ {
+        self.state
+            .successors()
+            .map(|(state, cost)| Self::new(state, self.cost + cost))
+    }
+}
+
+impl<S: PartialEq> PartialOrd for Candidate<S> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(
-            (self.energy + self.min_energy_remaining)
-                .cmp(&(other.energy + other.min_energy_remaining))
+            (self.cost + self.min_remaining_cost)
+                .cmp(&(other.cost + other.min_remaining_cost))
                 .reverse(),
         )
     }
 }
 
-impl Ord for Candidate {
+impl<S: Eq> Ord for Candidate<S> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-fn find_lowest_energy(start_layout: &Layout, track_history: bool) -> Option<usize> {
-    let mut heap: BinaryHeap<Candidate> = BinaryHeap::new();
-    let mut visited: HashSet<Layout> = HashSet::new();
+fn solve<S: Eq + Hash + State + Clone>(initial_state: S) -> Option<usize> {
+    let mut heap: BinaryHeap<Candidate<S>> = BinaryHeap::new();
+    let mut visited: HashSet<S> = HashSet::new();
 
-    heap.push(Candidate::new(start_layout.clone(), 0, track_history));
+    heap.push(Candidate::new(initial_state, 0));
 
     while let Some(candidate) = heap.pop() {
-        if candidate.layout.is_complete() {
-            candidate.print_history();
-            return Some(candidate.energy);
+        if candidate.state.is_complete() {
+            return Some(candidate.cost);
         }
 
-        if visited.contains(&candidate.layout) {
+        if visited.contains(&candidate.state) {
             continue;
         }
 
-        visited.insert(candidate.layout.clone());
+        visited.insert(candidate.state.clone());
 
         for next_candidate in candidate.successors() {
-            if !visited.contains(&next_candidate.layout) {
+            if !visited.contains(&next_candidate.state) {
                 heap.push(next_candidate);
             }
         }
@@ -581,14 +593,16 @@ fn find_lowest_energy(start_layout: &Layout, track_history: bool) -> Option<usiz
 fn main() {
     let opt = Opt::from_args();
     let mut layout = Layout::read(opt.input);
-    let total_energy = find_lowest_energy(&layout, false).unwrap();
+    let state = AmphipodState::new(layout.clone());
+    let total_energy = solve(state).unwrap();
     println!("{}", total_energy);
 
     use Amphipod::*;
     layout.insert_row(1, &[Desert, Copper, Bronze, Amber]);
     layout.insert_row(1, &[Desert, Bronze, Amber, Copper]);
 
-    let total_energy = find_lowest_energy(&layout, false).unwrap();
+    let state = AmphipodState::new(layout);
+    let total_energy = solve(state).unwrap();
     println!("{}", total_energy);
 }
 
@@ -610,8 +624,8 @@ mod test {
                 vec![Amber, Desert],
             ],
         };
-        let candidate = Candidate::new(layout, 0, false);
-        let successors = candidate.successors().collect::<Vec<_>>();
+        let state = AmphipodState::new(layout);
+        let successors = state.successors().collect::<Vec<_>>();
         assert_eq!(successors.len(), 28);
     }
 }
