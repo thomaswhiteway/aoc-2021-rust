@@ -51,7 +51,6 @@ impl Display for Amphipod {
             Desert => write!(f, "D"),
         }
     }
-
 }
 
 impl TryFrom<char> for Amphipod {
@@ -71,6 +70,7 @@ impl TryFrom<char> for Amphipod {
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct Layout {
+    room_depth: usize,
     corridor: [Option<Amphipod>; 7],
     rooms: [Vec<Amphipod>; 4],
 }
@@ -104,6 +104,7 @@ impl Layout {
         }
 
         Layout {
+            room_depth: 2,
             corridor: Default::default(),
             rooms,
         }
@@ -117,9 +118,17 @@ impl Layout {
             .unwrap()
     }
 
+    fn insert_row(&mut self, index: usize, row: &[Amphipod; 4]) {
+        for (amphipod, room) in row.iter().zip(self.rooms.iter_mut()) {
+            room.insert(index, *amphipod);
+        }
+        self.room_depth += 1;
+    }
+
     fn is_complete(&self) -> bool {
         self.rooms.iter().enumerate().all(|(room, amphipods)| {
-            amphipods.len() == 2 && amphipods.iter().all(|amphipod| amphipod.room() == room)
+            amphipods.len() == self.room_depth
+                && amphipods.iter().all(|amphipod| amphipod.room() == room)
         })
     }
 
@@ -141,7 +150,8 @@ impl Layout {
         abs_diff(
             Self::spot_position(spot),
             Self::room_entrance_position(room),
-        ) + 2 - self.rooms[room].len()
+        ) + self.room_depth
+            - self.rooms[room].len()
     }
 
     fn distance_between_rooms(&self, room1: usize, room2: usize) -> usize {
@@ -149,7 +159,10 @@ impl Layout {
             abs_diff(
                 Self::room_entrance_position(room1),
                 Self::room_entrance_position(room2),
-            ) + 5 - self.rooms[room1].len() - self.rooms[room2].len()
+            ) + 2 * self.room_depth
+                + 1
+                - self.rooms[room1].len()
+                - self.rooms[room2].len()
         } else {
             0
         }
@@ -159,7 +172,9 @@ impl Layout {
         abs_diff(
             Self::spot_position(spot),
             Self::room_entrance_position(room),
-        ) + 3 - self.rooms[room].len()
+        ) + self.room_depth
+            + 1
+            - self.rooms[room].len()
     }
 
     fn distance_between_spots(&self, spot1: usize, spot2: usize) -> usize {
@@ -194,13 +209,13 @@ impl Layout {
         }
     }
 
-    fn spots_between(source: usize, dest: usize) -> impl Iterator<Item=usize> {
+    fn spots_between(source: usize, dest: usize) -> impl Iterator<Item = usize> {
         let positions = if source < dest {
-           source+1..=dest
+            source + 1..=dest
         } else {
-            dest..=source-1
+            dest..=source - 1
         };
-        positions.filter_map(|position| Self::get_spot(position))
+        positions.filter_map(Self::get_spot)
     }
 
     fn is_clear(&self, from: usize, to: usize) -> bool {
@@ -208,11 +223,20 @@ impl Layout {
     }
 
     fn can_move_from_corridor_to_room(&self, spot: usize, room: usize) -> bool {
-        self.is_clear(Self::spot_position(spot), Self::room_entrance_position(room)) && self.rooms[room].len() < 2
+        self.is_clear(
+            Self::spot_position(spot),
+            Self::room_entrance_position(room),
+        ) && self.rooms[room].len() < self.room_depth
+            && self.rooms[room]
+                .iter()
+                .all(|amphipod| amphipod.room() == room)
     }
 
     fn can_move_from_room_to_corridor(&self, room: usize, spot: usize) -> bool {
-        self.is_clear(Self::room_entrance_position(room), Self::spot_position(spot))
+        self.is_clear(
+            Self::room_entrance_position(room),
+            Self::spot_position(spot),
+        )
     }
 
     fn can_move_in_corridor(&self, spot1: usize, spot2: usize) -> bool {
@@ -220,7 +244,13 @@ impl Layout {
     }
 
     fn can_move_between_rooms(&self, from: usize, to: usize) -> bool {
-        from != to && self.is_clear(Self::room_entrance_position(from), Self::room_entrance_position(to)) && self.rooms[to].len() < 2
+        from != to
+            && self.is_clear(
+                Self::room_entrance_position(from),
+                Self::room_entrance_position(to),
+            )
+            && self.rooms[to].len() < self.room_depth
+            && self.rooms[to].iter().all(|amphipod| amphipod.room() == to)
     }
 
     fn amphipods_in_corridor(&self) -> impl Iterator<Item = (usize, Amphipod)> + '_ {
@@ -242,13 +272,19 @@ impl Layout {
     fn min_energy_to_solve(&self) -> usize {
         self.amphipods_in_corridor()
             .map(|(spot, amphipod)| {
-                amphipod.energy_to_move() * (self.distance_to_room(spot, amphipod.room()) - 1)
+                amphipod.energy_to_move()
+                    * (self
+                        .distance_to_room(spot, amphipod.room())
+                        .saturating_sub((self.room_depth * (self.room_depth - 1)) / 2))
             })
             .sum::<usize>()
             + self
                 .amphipods_in_rooms()
                 .map(|(room, _, _, amphipod)| {
-                    amphipod.energy_to_move() * (self.distance_between_rooms(room, amphipod.room()).saturating_sub(1))
+                    amphipod.energy_to_move()
+                        * (self
+                            .distance_between_rooms(room, amphipod.room())
+                            .saturating_sub((self.room_depth * (self.room_depth - 1)) / 2))
                 })
                 .sum::<usize>()
     }
@@ -270,32 +306,31 @@ impl Display for Layout {
             }
         }
         writeln!(f, "#")?;
-        write!(f, "###")?;
-        for position in 2..=8 {
-            if let Some(room) = Self::get_room(position) {
-                if let Some(amphipod) = self.rooms[room].get(1) {
-                    write!(f, "{}", amphipod)?;
-                } else {
-                    write!(f, ".")?;
-                }
+
+        for index in 0..self.room_depth {
+            if index == 0 {
+                write!(f, "###")?;
             } else {
-                write!(f, "#")?
+                write!(f, "  #")?;
+            }
+            for position in 2..=8 {
+                if let Some(room) = Self::get_room(position) {
+                    if let Some(amphipod) = self.rooms[room].get(self.room_depth - index - 1) {
+                        write!(f, "{}", amphipod)?;
+                    } else {
+                        write!(f, ".")?;
+                    }
+                } else {
+                    write!(f, "#")?
+                }
+            }
+            if index == 0 {
+                writeln!(f, "###")?;
+            } else {
+                writeln!(f, "#")?;
             }
         }
-        writeln!(f, "###")?;
-        write!(f, "  #")?;
-        for position in 2..=8 {
-            if let Some(room) = Self::get_room(position) {
-                if let Some(amphipod) = self.rooms[room].get(0) {
-                    write!(f, "{}", amphipod)?;
-                } else {
-                    write!(f, ".")?;
-                }
-            } else {
-                write!(f, "#")?
-            }
-        }
-        writeln!(f, "#  ")?;
+
         writeln!(f, "  #########   ")
     }
 }
@@ -305,31 +340,34 @@ struct Candidate {
     layout: Layout,
     energy: usize,
     min_energy_remaining: usize,
-    history: Vec<(Layout, usize)>,
+    history: Option<Vec<(Layout, usize)>>,
 }
 
 impl Candidate {
-    fn new(layout: Layout, energy: usize) -> Self {
+    fn new(layout: Layout, energy: usize, track_history: bool) -> Self {
         let min_energy_remaining = layout.min_energy_to_solve();
         Candidate {
             layout,
             energy,
             min_energy_remaining,
-            history: vec![]
+            history: if track_history { Some(vec![]) } else { None },
         }
     }
 
     fn successor(&self, layout: Layout, new_energy: usize) -> Self {
         let min_energy_remaining = layout.min_energy_to_solve();
 
-        let mut history = self.history.clone();
-        history.push((self.layout.clone(), new_energy));
+        let history = self.history.as_ref().map(|history| {
+            let mut history = history.clone();
+            history.push((self.layout.clone(), new_energy));
+            history
+        });
 
         Candidate {
             layout,
             energy: self.energy + new_energy,
             min_energy_remaining,
-            history
+            history,
         }
     }
 
@@ -340,11 +378,17 @@ impl Candidate {
         let mut candidates = vec![];
 
         let target_room = amphipod.room();
-        if self.layout.can_move_from_corridor_to_room(spot, target_room) {
+        if self
+            .layout
+            .can_move_from_corridor_to_room(spot, target_room)
+        {
             let mut new_layout = new_layout.clone();
             new_layout.rooms[target_room].push(amphipod);
 
-            candidates.push(self.successor(new_layout, amphipod.energy_to_move() * self.layout.distance_to_room(spot, target_room)));
+            candidates.push(self.successor(
+                new_layout,
+                amphipod.energy_to_move() * self.layout.distance_to_room(spot, target_room),
+            ));
         }
 
         for other_spot in 0..7 {
@@ -352,7 +396,11 @@ impl Candidate {
                 let mut new_layout = new_layout.clone();
                 new_layout.corridor[other_spot] = Some(amphipod);
 
-                candidates.push(self.successor(new_layout, amphipod.energy_to_move() * self.layout.distance_between_spots(spot, other_spot)));
+                candidates.push(self.successor(
+                    new_layout,
+                    amphipod.energy_to_move()
+                        * self.layout.distance_between_spots(spot, other_spot),
+                ));
             }
         }
 
@@ -370,20 +418,25 @@ impl Candidate {
             let mut new_layout = new_layout.clone();
             new_layout.rooms[target_room].push(amphipod);
 
-            candidates.push(self.successor(new_layout, amphipod.energy_to_move() * self.layout.distance_between_rooms(room, target_room)));
+            candidates.push(self.successor(
+                new_layout,
+                amphipod.energy_to_move() * self.layout.distance_between_rooms(room, target_room),
+            ));
         }
 
-        for  spot in 0..7 {
+        for spot in 0..7 {
             if self.layout.can_move_from_room_to_corridor(room, spot) {
                 let mut new_layout = new_layout.clone();
                 new_layout.corridor[spot] = Some(amphipod);
 
-                candidates.push(self.successor(new_layout, amphipod.energy_to_move() * self.layout.distance_from_room(room, spot)));
+                candidates.push(self.successor(
+                    new_layout,
+                    amphipod.energy_to_move() * self.layout.distance_from_room(room, spot),
+                ));
             }
         }
 
         candidates.into_iter()
-
     }
 
     fn successors(&self) -> impl Iterator<Item = Candidate> + '_ {
@@ -395,18 +448,22 @@ impl Candidate {
                     .rooms
                     .iter()
                     .enumerate()
-                    .filter(|(room, contents)| contents.iter().any(|amphipod| amphipod.room() != *room))
+                    .filter(|(room, contents)| {
+                        contents.iter().any(|amphipod| amphipod.room() != *room)
+                    })
                     .flat_map(|(room, _)| self.move_from_room(room)),
             )
     }
 
     fn print_history(&self) {
-        for (layout, energy) in self.history.iter() {
-            println!("{}", layout);
-            println!("Energy: {}", energy);
-            println!();
+        if let Some(ref history) = self.history {
+            for (layout, energy) in history.iter() {
+                println!("{}", layout);
+                println!("Energy: {}", energy);
+                println!();
+            }
+            println!("{}", self.layout);
         }
-        println!("{}", self.layout);
     }
 }
 
@@ -426,11 +483,11 @@ impl Ord for Candidate {
     }
 }
 
-fn find_lowest_energy(start_layout: &Layout) -> Option<usize> {
+fn find_lowest_energy(start_layout: &Layout, track_history: bool) -> Option<usize> {
     let mut heap: BinaryHeap<Candidate> = BinaryHeap::new();
     let mut visited: HashSet<Layout> = HashSet::new();
 
-    heap.push(Candidate::new(start_layout.clone(), 0));
+    heap.push(Candidate::new(start_layout.clone(), 0, track_history));
 
     while let Some(candidate) = heap.pop() {
         if candidate.layout.is_complete() {
@@ -456,8 +513,15 @@ fn find_lowest_energy(start_layout: &Layout) -> Option<usize> {
 
 fn main() {
     let opt = Opt::from_args();
-    let layout = Layout::read(opt.input);
-    let total_energy = find_lowest_energy(&layout).unwrap();
+    let mut layout = Layout::read(opt.input);
+    let total_energy = find_lowest_energy(&layout, false).unwrap();
+    println!("{}", total_energy);
+
+    use Amphipod::*;
+    layout.insert_row(1, &[Desert, Copper, Bronze, Amber]);
+    layout.insert_row(1, &[Desert, Bronze, Amber, Copper]);
+
+    let total_energy = find_lowest_energy(&layout, false).unwrap();
     println!("{}", total_energy);
 }
 
@@ -469,8 +533,17 @@ mod test {
     fn test_successors_from_rooms() {
         use Amphipod::*;
 
-        let layout = Layout { corridor: Default::default(), rooms: [vec![Amber, Bronze], vec![Desert, Copper], vec![Copper, Bronze], vec![Amber, Desert]]};
-        let candidate = Candidate::new(layout, 0);
+        let layout = Layout {
+            corridor: Default::default(),
+            room_depth: 2,
+            rooms: [
+                vec![Amber, Bronze],
+                vec![Desert, Copper],
+                vec![Copper, Bronze],
+                vec![Amber, Desert],
+            ],
+        };
+        let candidate = Candidate::new(layout, 0, false);
         let successors = candidate.successors().collect::<Vec<_>>();
         assert_eq!(successors.len(), 28);
     }
@@ -479,8 +552,16 @@ mod test {
     fn test_distance_from_room_to_spot() {
         use Amphipod::*;
 
-        let layout = Layout { corridor: [None, None, None, None, None, Some(Desert), None], rooms: [vec![Amber, Bronze], vec![Desert, Copper], vec![Copper, Bronze], vec![Amber]]};
+        let layout = Layout {
+            corridor: [None, None, None, None, None, Some(Desert), None],
+            room_depth: 2,
+            rooms: [
+                vec![Amber, Bronze],
+                vec![Desert, Copper],
+                vec![Copper, Bronze],
+                vec![Amber],
+            ],
+        };
         assert_eq!(layout.distance_from_room(3, 1), 9);
-
     }
 }
