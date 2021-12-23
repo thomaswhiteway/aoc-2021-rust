@@ -51,7 +51,6 @@ impl Instruction {
             self.on,
         );
     }
-
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -205,9 +204,13 @@ impl<T: Default + Clone + Eq + GetRegions<Contents = T> + Update<Contents = T>> 
     }
 
     fn regions_with_value(&self, value: T) -> impl Iterator<Item = i64> + '_ {
-        self.0
-            .regions()
-            .filter_map(move |(volume, contents)| if contents == value { Some(volume) } else { None })
+        self.0.regions().filter_map(move |(volume, contents)| {
+            if contents == value {
+                Some(volume)
+            } else {
+                None
+            }
+        })
     }
 
     fn num_cube_with_value(&self, value: T) -> i64 {
