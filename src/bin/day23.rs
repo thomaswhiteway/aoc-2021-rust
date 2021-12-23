@@ -452,6 +452,7 @@ struct Candidate {
     energy: usize,
     min_energy_remaining: usize,
     history: Option<Vec<(Layout, usize)>>,
+    last_move: Option<Location>,
 }
 
 impl Candidate {
@@ -462,10 +463,13 @@ impl Candidate {
             energy,
             min_energy_remaining,
             history: if track_history { Some(vec![]) } else { None },
+            last_move: None,
         }
     }
 
-    fn successor(&self, layout: Layout, new_energy: usize) -> Self {
+    fn successor(&self, amphipod: Amphipod, from: Location, to: Location) -> Self {
+        let layout = self.layout.do_move(from, to);
+        let new_energy = amphipod.energy_to_move() * from.distance_to(to);
         let min_energy_remaining = layout.min_energy_to_solve();
 
         let history = self.history.as_ref().map(|history| {
@@ -479,6 +483,7 @@ impl Candidate {
             energy: self.energy + new_energy,
             min_energy_remaining,
             history,
+            last_move: Some(to),
         }
     }
 
@@ -486,27 +491,22 @@ impl Candidate {
         self.layout.amphipods().filter_map(|(location, amphipod)| {
             self.layout
                 .can_move_to_room(location, amphipod.room())
-                .map(|new_location| {
-                    self.successor(
-                        self.layout.do_move(location, new_location),
-                        amphipod.energy_to_move() * location.distance_to(new_location),
-                    )
-                })
+                .map(|new_location|
+                    self.successor(amphipod, location, new_location)
+                )
         })
     }
 
     fn moves_to_corridor(&self) -> impl Iterator<Item = Candidate> + '_ {
         self.layout
             .amphipods()
+            .filter(|(location, _)| self.last_move != Some(*location))
             .flat_map(move |(location, amphipod)| {
                 self.layout
                     .moves_to_corridor(location)
-                    .map(move |new_location| {
-                        self.successor(
-                            self.layout.do_move(location, new_location),
-                            amphipod.energy_to_move() * location.distance_to(new_location),
-                        )
-                    })
+                    .map(move |new_location|
+                        self.successor(amphipod, location, new_location)
+                    )
             })
     }
 
