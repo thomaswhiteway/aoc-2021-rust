@@ -185,11 +185,11 @@ fn main() {
 
     let risks = parse_risk_map(opt.input);
 
-    let total_risk = a_star::solve(State::new(&risks)).unwrap();
+    let (_, total_risk) = a_star::solve(State::new(&risks)).unwrap();
     println!("{}", total_risk);
 
     let risks = risks.with_mult(5);
 
-    let total_risk = a_star::solve(State::new(&risks)).unwrap();
+    let (_, total_risk) = a_star::solve(State::new(&risks)).unwrap();
     println!("{}", total_risk);
 }

@@ -7,7 +7,7 @@ pub trait State: Sized {
     fn is_complete(&self) -> bool;
 }
 
-pub fn solve<S: Eq + Hash + State + Clone>(initial_state: S) -> Option<usize> {
+pub fn solve<S: Eq + Hash + State + Clone>(initial_state: S) -> Option<(S, usize)> {
     let mut heap: BinaryHeap<Candidate<S>> = BinaryHeap::new();
     let mut visited: HashSet<S> = HashSet::new();
 
@@ -15,7 +15,7 @@ pub fn solve<S: Eq + Hash + State + Clone>(initial_state: S) -> Option<usize> {
 
     while let Some(candidate) = heap.pop() {
         if candidate.state.is_complete() {
-            return Some(candidate.cost);
+            return Some((candidate.state, candidate.cost));
         }
 
         if visited.contains(&candidate.state) {
@@ -71,5 +71,67 @@ impl<S: PartialEq> PartialOrd for Candidate<S> {
 impl<S: Eq> Ord for Candidate<S> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
+    }
+}
+
+#[derive(Clone)]
+pub struct Tracking<S> {
+    state: S,
+    history: Vec<(S, usize)>,
+}
+
+impl<S: PartialEq> PartialEq for Tracking<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+    }
+}
+
+impl<S: Eq> Eq for Tracking<S> {}
+
+impl<S: Hash> Hash for Tracking<S> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.state.hash(state)
+    }
+}
+
+impl<S: Clone> Tracking<S> {
+    pub fn new(state: S) -> Self {
+        Tracking {
+            state,
+            history: vec![]
+        }
+    }
+
+    pub fn state(&self) -> &S {
+        &self.state
+    }
+
+    pub fn history(&self) -> impl Iterator<Item=&(S, usize)> + '_ {
+        self.history.iter()
+    }
+
+    fn successor(&self, state: S, cost: usize) -> (Self, usize) {
+        let mut history = self.history.clone();
+        history.push((self.state.clone(), cost));
+
+        (Tracking {
+            state,
+            history
+        },
+        cost)
+    }
+}
+
+impl<S: State + Clone> State for Tracking<S> {
+    fn min_remaining_cost(&self) -> usize {
+        self.state.min_remaining_cost()
+    }
+
+    fn is_complete(&self) -> bool {
+        self.state.is_complete()
+    }
+
+    fn successors(&self) -> Box<dyn Iterator<Item = (Self, usize)> + '_> {
+        Box::new(self.state.successors().map(|(state, cost)| self.successor(state, cost)))
     }
 }

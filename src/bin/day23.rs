@@ -505,11 +505,20 @@ impl a_star::State for AmphipodState {
     }
 }
 
+fn print_history(tracking: &a_star::Tracking<AmphipodState>) {
+
+    for (state, energy) in tracking.history() {
+        println!("{}", state.layout);
+        println!("Energy: {}\n", energy);
+    }
+    println!("{}", tracking.state().layout);
+}
+
 fn main() {
     let opt = Opt::from_args();
     let mut layout = Layout::read(opt.input);
     let state = AmphipodState::new(layout.clone());
-    let total_energy = a_star::solve(state).unwrap();
+    let (_, total_energy) = a_star::solve(state).unwrap();
     println!("{}", total_energy);
 
     use Amphipod::*;
@@ -517,7 +526,9 @@ fn main() {
     layout.insert_row(1, &[Desert, Bronze, Amber, Copper]);
 
     let state = AmphipodState::new(layout);
-    let total_energy = a_star::solve(state).unwrap();
+    let (final_state, total_energy) = a_star::solve(a_star::Tracking::new(state)).unwrap();
+
+    print_history(&final_state);
     println!("{}", total_energy);
 }
 
