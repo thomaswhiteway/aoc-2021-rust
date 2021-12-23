@@ -474,7 +474,7 @@ impl AmphipodState {
 
     fn moves_to_corridor(&self) -> impl Iterator<Item = (AmphipodState, usize)> + '_ {
         self.layout
-            .amphipods()
+            .amphipods_in_rooms()
             .flat_map(move |(location, amphipod)| {
                 self.layout
                     .moves_to_corridor(location)
