@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-use aoc2021::tracker::{OperationTrack, Track};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
@@ -341,14 +339,6 @@ impl Expression {
         }
     }
 
-    fn size(&self) -> usize {
-        use Expression::*;
-        match self {
-            Variable(_) | Constant(_) | Input(_) | Argument(_) => 1,
-            Add(x, y) | Mul(x, y) | Div(x, y) | Mod(x, y) | Eql(x, y) => 1 + x.size() + y.size(),
-        }
-    }
-
     fn expand(&mut self, instructions: &[Instruction]) {
         let mut inputs = 0..;
         for instruction in instructions.iter().rev() {
@@ -417,50 +407,6 @@ fn run(instructions: &[Instruction], input: &[i64], arguments: &[i64], z: i64) -
 
     state.get(Variable::Z)
 }
-
-struct ModelNumberChecker<T> {
-    instructions: Box<[Instruction]>,
-    tracker: T,
-}
-
-impl<T: Track> ModelNumberChecker<T> {
-    fn new(instructions: Box<[Instruction]>, tracker: T) -> Self {
-        ModelNumberChecker {
-            instructions,
-            tracker,
-        }
-    }
-
-    fn run(&self, input: &[i64]) -> i64 {
-        run(&self.instructions, input, &[], 0)
-    }
-
-    fn is_valid_model_number(&self, model_number: i64) -> bool {
-        let op = self.tracker.track_operation();
-
-        let digits = {
-            let _t = op.track_duration("format");
-            model_number
-                .to_string()
-                .chars()
-                .map(|c| c.to_digit(10).unwrap() as i64)
-                .collect::<Vec<_>>()
-        };
-
-        let mut allowed = {
-            let _t = op.track_duration("check");
-            digits.iter().all(|d| *d != 0)
-        };
-
-        if allowed {
-            let _t = op.track_duration("run");
-            allowed = self.run(&digits) == 0
-        }
-
-        allowed
-    }
-}
-
 fn extract_arguments(function: &mut [Instruction]) -> Vec<i64> {
     let mut args = vec![];
 
@@ -584,8 +530,9 @@ fn main() {
             .iter()
             .flat_map(|z| {
                 (1..10).map(|digit|
-            //output_for_digit(*z, digit, args[0], args[1], args[2])
-            run(&function, &[digit], args, *z))
+            output_for_digit(*z, digit, args[0], args[1], args[2])
+            //run(&function, &[digit], args, *z)
+                )
             })
             .collect();
         println!("{}: {}", index, new_zs.len());
