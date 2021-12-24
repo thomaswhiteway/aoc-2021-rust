@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 use aoc2021::tracker::{OperationTrack, Track};
 use itertools::Itertools;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use structopt::StructOpt;
-use std::collections::{HashSet, HashMap};
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -226,7 +226,9 @@ where
     I: Iterator<Item = &'a str>,
     V: FromStr<Err = String>,
 {
-    iter.next().ok_or("Missing parameter".to_string())?.parse()
+    iter.next()
+        .ok_or_else(|| "Missing parameter".to_string())?
+        .parse()
 }
 
 impl FromStr for Instruction {
@@ -235,7 +237,10 @@ impl FromStr for Instruction {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use Instruction::*;
         let mut parts = s.split(' ');
-        match parts.next().ok_or("Empty instruction".to_string())? {
+        match parts
+            .next()
+            .ok_or_else(|| "Empty instruction".to_string())?
+        {
             "inp" => read_unary_instruction(Input, &mut parts),
             "add" => read_binary_instruction(Add, &mut parts),
             "mul" => read_binary_instruction(Mul, &mut parts),
@@ -353,10 +358,7 @@ impl Expression {
 
     fn is_compound(&self) -> bool {
         use Expression::*;
-        match self {
-            Add(..) | Mul(..) | Div(..) | Mod(..) | Eql(..) => true,
-            _ => false,
-        }
+        matches!(self, Add(..) | Mul(..) | Div(..) | Mod(..) | Eql(..))
     }
 }
 
@@ -459,16 +461,6 @@ impl<T: Track> ModelNumberChecker<T> {
     }
 }
 
-fn find_highest_model_number<T: Track>(
-    instructions: Box<[Instruction]>,
-    tracker: T,
-) -> Option<i64> {
-    let checker: ModelNumberChecker<T> = ModelNumberChecker::new(instructions, tracker);
-    (11111111111111 as i64..=99999999999999)
-        .rev()
-        .find(|model_number| checker.is_valid_model_number(*model_number))
-}
-
 fn extract_arguments(function: &mut [Instruction]) -> Vec<i64> {
     let mut args = vec![];
 
@@ -509,6 +501,7 @@ fn resolve_common_args(instructions: &mut [Instruction], arguments: &mut [Vec<i6
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn extract_function(
     instructions: &[Instruction],
     length: usize,
@@ -585,12 +578,16 @@ fn main() {
     println!("Calculating possible zs");
     let mut zs = vec![[0_i64].into_iter().collect::<HashSet<_>>()];
 
-    for (index, args) in arguments[..arguments.len()-1].iter().enumerate() {
+    for (index, args) in arguments[..arguments.len() - 1].iter().enumerate() {
         let last_zs = zs.last().unwrap();
-        let new_zs: HashSet<i64> = last_zs.iter().flat_map(|z| (1..10).map(|digit|
+        let new_zs: HashSet<i64> = last_zs
+            .iter()
+            .flat_map(|z| {
+                (1..10).map(|digit|
             //output_for_digit(*z, digit, args[0], args[1], args[2])
-            run(&function, &[digit], args, *z)
-        )).collect();
+            run(&function, &[digit], args, *z))
+            })
+            .collect();
         println!("{}: {}", index, new_zs.len());
         zs.push(new_zs);
     }
@@ -617,10 +614,21 @@ fn main() {
         println!("{}: {}", index, candidates.len());
     }
 
-    let mut nums = candidates.get(&0).unwrap().iter().map(|num| num.iter().rev().map(|d| char::from_digit(*d as u32, 10).unwrap()).collect::<String>()).collect::<Vec<_>>();
+    let mut nums = candidates
+        .get(&0)
+        .unwrap()
+        .iter()
+        .map(|num| {
+            num.iter()
+                .rev()
+                .map(|d| char::from_digit(*d as u32, 10).unwrap())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
     println!("Have {} valid membership numbers", nums.len());
     nums.sort();
     println!("Highest: {}", nums.last().unwrap());
+    println!("Lowest: {}", nums.first().unwrap());
 }
 
 #[cfg(test)]
