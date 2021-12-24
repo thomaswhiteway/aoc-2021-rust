@@ -98,7 +98,7 @@ impl<S: Clone> Tracking<S> {
     pub fn new(state: S) -> Self {
         Tracking {
             state,
-            history: vec![]
+            history: vec![],
         }
     }
 
@@ -106,7 +106,7 @@ impl<S: Clone> Tracking<S> {
         &self.state
     }
 
-    pub fn history(&self) -> impl Iterator<Item=&(S, usize)> + '_ {
+    pub fn history(&self) -> impl Iterator<Item = &(S, usize)> + '_ {
         self.history.iter()
     }
 
@@ -114,11 +114,7 @@ impl<S: Clone> Tracking<S> {
         let mut history = self.history.clone();
         history.push((self.state.clone(), cost));
 
-        (Tracking {
-            state,
-            history
-        },
-        cost)
+        (Tracking { state, history }, cost)
     }
 }
 
@@ -132,6 +128,10 @@ impl<S: State + Clone> State for Tracking<S> {
     }
 
     fn successors(&self) -> Box<dyn Iterator<Item = (Self, usize)> + '_> {
-        Box::new(self.state.successors().map(|(state, cost)| self.successor(state, cost)))
+        Box::new(
+            self.state
+                .successors()
+                .map(|(state, cost)| self.successor(state, cost)),
+        )
     }
 }
