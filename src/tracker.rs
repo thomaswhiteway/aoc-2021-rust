@@ -1,7 +1,7 @@
-use std::time::{Duration, Instant};
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 #[derive(Default)]
 struct Count {
@@ -32,24 +32,23 @@ impl Count {
 pub struct DurationTracker {
     operation: &'static str,
     start: Instant,
-    tracker: Rc<Tracker>
+    tracker: Rc<Tracker>,
 }
 
 impl Drop for DurationTracker {
     fn drop(&mut self) {
-        self.tracker.report_duration(self.operation, self.start.elapsed())
+        self.tracker
+            .report_duration(self.operation, self.start.elapsed())
     }
 }
 
 pub struct OperationTracker {
-    tracker: Rc<Tracker>
+    tracker: Rc<Tracker>,
 }
 
 impl OperationTracker {
     fn new(tracker: Rc<Tracker>) -> Self {
-        OperationTracker {
-            tracker
-        }
+        OperationTracker { tracker }
     }
 }
 impl Drop for OperationTracker {
@@ -74,7 +73,11 @@ impl Tracker {
     }
 
     fn report_duration(&self, operation: &'static str, duration: Duration) {
-        self.durations.borrow_mut().entry(operation).or_default().update(duration)
+        self.durations
+            .borrow_mut()
+            .entry(operation)
+            .or_default()
+            .update(duration)
     }
 
     fn done(&self) {
@@ -89,15 +92,23 @@ impl Tracker {
                     if index > 0 {
                         print!(", ");
                     }
-                    print!("{} {} (x{})",
+                    print!(
+                        "{} {} (x{})",
                         operation,
                         duration_count.count,
-                        duration_count.nanos_per_op().map(|val| format!("{}ns", val)).unwrap_or_else(|| "n/a".to_string()));
+                        duration_count
+                            .nanos_per_op()
+                            .map(|val| format!("{}ns", val))
+                            .unwrap_or_else(|| "n/a".to_string())
+                    );
                 }
                 println!();
             }
 
-            self.durations.borrow_mut().values_mut().for_each(|count| count.reset());
+            self.durations
+                .borrow_mut()
+                .values_mut()
+                .for_each(|count| count.reset());
         }
     }
 }
@@ -117,7 +128,6 @@ impl Track for Rc<Tracker> {
 
     fn track_operation(&self) -> Self::OperationTracker {
         OperationTracker::new(self.clone())
-
     }
 }
 
@@ -128,7 +138,7 @@ impl OperationTrack for OperationTracker {
         DurationTracker {
             operation,
             start: Instant::now(),
-            tracker: self.tracker.clone()
+            tracker: self.tracker.clone(),
         }
     }
 }
@@ -136,15 +146,11 @@ impl OperationTrack for OperationTracker {
 impl Track for () {
     type OperationTracker = ();
 
-    fn track_operation(&self) -> Self::OperationTracker {
-        ()
-    }
+    fn track_operation(&self) -> Self::OperationTracker {}
 }
 
 impl OperationTrack for () {
     type DurationTracker = ();
 
-    fn track_duration(&self, _operation: &'static str) -> Self::DurationTracker {
-        ()
-    }
+    fn track_duration(&self, _operation: &'static str) -> Self::DurationTracker {}
 }

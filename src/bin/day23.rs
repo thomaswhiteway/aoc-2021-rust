@@ -506,7 +506,6 @@ impl a_star::State for AmphipodState {
 }
 
 fn print_history(tracking: &a_star::Tracking<AmphipodState>) {
-
     for (state, energy) in tracking.history() {
         println!("{}", state.layout);
         println!("Energy: {}\n", energy);
