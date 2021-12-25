@@ -97,6 +97,14 @@ impl<T> TorusMap<T> {
         self.map.get(&self.wrap(position))
     }
 
+    pub fn insert(&mut self, position: Position, contents: T) -> Option<T> {
+        self.map.insert(self.wrap(&position), contents)
+    }
+
+    pub fn remove(&mut self, position: &Position) -> Option<T> {
+        self.map.remove(&self.wrap(position))
+    }
+
     pub fn contains_key(&self, position: &Position) -> bool {
         self.map.contains_key(&self.wrap(position))
     }
@@ -112,5 +120,16 @@ impl<T> TorusMap<T> {
             .map(|(position, val)| (self.wrap(&position), val))
             .collect();
         Self::new(map, self.width, self.height)
+    }
+
+    pub fn make_moves<I>(&mut self, moves: I)
+    where
+        I: IntoIterator<Item = (Position, Position)>,
+    {
+        for (from, to) in moves {
+            if let Some(contents) = self.remove(&from) {
+                self.insert(to, contents);
+            }
+        }
     }
 }

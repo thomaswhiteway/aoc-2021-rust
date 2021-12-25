@@ -38,14 +38,29 @@ fn read_map<P: AsRef<Path>>(input: P) -> CucumberMap {
     CucumberMap::new(map, grid[0].len() as i64, grid.len() as i64)
 }
 
-fn move_cucumbers(map: &CucumberMap, move_in: Direction) -> CucumberMap {
-    map.map(|(position, direction)| {
-        if *direction == move_in && !map.contains_key(&position.step(*direction)) {
-            (position.step(*direction), *direction)
-        } else {
-            (*position, *direction)
-        }
-    })
+fn move_cucumbers(map: &mut CucumberMap, move_in: Direction) -> bool {
+    let moves = map
+        .iter()
+        .filter_map(|(position, direction)| {
+            if *direction == move_in {
+                let next = position.step(*direction);
+
+                if !map.contains_key(&next) {
+                    Some((*position, position.step(*direction)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let moved = !moves.is_empty();
+
+    map.make_moves(moves);
+
+    moved
 }
 
 #[allow(dead_code)]
@@ -69,14 +84,13 @@ fn move_until_gridlock(map: &CucumberMap) -> usize {
     let mut map = map.clone();
 
     for step in 1.. {
-        let mut new_map = move_cucumbers(&map, Direction::East);
-        new_map = move_cucumbers(&new_map, Direction::South);
+        let mut updated = false;
+        updated |= move_cucumbers(&mut map, Direction::East);
+        updated |= move_cucumbers(&mut map, Direction::South);
 
-        if new_map == map {
+        if !updated {
             return step;
         }
-
-        map = new_map;
     }
 
     unreachable!()
