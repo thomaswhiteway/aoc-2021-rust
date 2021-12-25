@@ -528,12 +528,7 @@ fn main() {
         let last_zs = zs.last().unwrap();
         let new_zs: HashSet<i64> = last_zs
             .iter()
-            .flat_map(|z| {
-                (1..10).map(|digit|
-            output_for_digit(*z, digit, args[0], args[1], args[2])
-            //run(&function, &[digit], args, *z)
-                )
-            })
+            .flat_map(|z| (1..10).map(|digit| run(&function, &[digit], args, *z)))
             .collect();
         println!("{}: {}", index, new_zs.len());
         zs.push(new_zs);
