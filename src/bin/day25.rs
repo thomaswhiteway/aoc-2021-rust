@@ -89,6 +89,7 @@ fn move_until_gridlock(map: &CucumberMap) -> usize {
         updated |= move_cucumbers(&mut map, Direction::South);
 
         if !updated {
+            print_map(&map);
             return step;
         }
     }
